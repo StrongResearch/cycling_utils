@@ -1,3 +1,3 @@
-# cycling_utils
+# cycling utils
 
 Utilities for cycling jobs on ISC infra
