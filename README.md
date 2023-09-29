@@ -35,7 +35,6 @@ Another useful utility is to keep track of where you are in a dataset. This is s
 ```
 from cycling_utils import InterruptableDistributedSampler
 
-
 dataset = ... # your dataset
 sampler  = InterruptableDistributedSampler(dataset)
 loader = DataLoader(dataset, sampler=sampler)
@@ -51,5 +50,10 @@ for batch in loader:
   sampler.advance(batch_size)
 
   # save sampler.state_dict() in your checkpoint
+
+  atomic_torch_save({
+    "sampler":sampler.state_dict(),
+    # anything else
+  })
 ```
 
