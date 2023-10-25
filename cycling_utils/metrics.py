@@ -42,7 +42,10 @@ class MetricsTracker:
     >>> metrics.end_epoch()
 
     The MetricsTracker saves a copy of the accumulated metrics (metrics.agg) for
-    each epoch which can be stored within a checkpoint.
+    each epoch which can be stored within a checkpoint and accessed later.
+
+    >>> metrics_history = metrics.epoch_reports
+    >>> loss_history = [epoch["loss"] for epoch in metrics_history]
     '''
     def __init__(self):
         self.local = defaultdict(float)
