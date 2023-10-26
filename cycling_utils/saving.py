@@ -1,7 +1,6 @@
 import os
-import torch
-
 from pathlib import Path
+import torch
 
 def atomic_torch_save(obj, f: str | Path, **kwargs):
     f = str(f)
