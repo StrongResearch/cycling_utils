@@ -161,7 +161,6 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         self._has_reset_progress = True
         self.batch_size = batch_size
         self.group_ids = group_ids
-        self.batches = self._create_batches()
 
     def _create_batches(self):
         if self.shuffle:
@@ -241,6 +240,7 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         if not self._has_reset_progress:
             raise HasNotResetProgressError("You must reset progress before setting epoch e.g. `sampler.reset_progress()`\nor use `with sampler.in_epoch(epoch)` instead of `sampler.set_epoch(epoch)`")
         self.epoch = epoch
+        self.batches = self._create_batches()
 
     def state_dict(self):
         return {"progress": self.progress, "epoch": self.epoch}
