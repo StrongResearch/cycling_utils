@@ -3,6 +3,7 @@ from .sampler import InterruptableDistributedSampler, InterruptableDistributedGr
 from .lightning_utils import EpochHandler
 from .metrics import MetricsTracker
 from .timing import TimestampedTimer
+from .cycler import BaseCycler
 
 __all__ = [
     "InterruptableDistributedSampler", 
