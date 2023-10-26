@@ -1,4 +1,6 @@
-import os, time
+import os
+import time
+
 
 class TimestampedTimer:
 

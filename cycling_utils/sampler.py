@@ -1,9 +1,11 @@
 import math
+from collections import defaultdict
+from contextlib import contextmanager
+from itertools import chain, repeat
+
 import torch
 from torch.utils.data import Dataset, DistributedSampler
-from contextlib import contextmanager
-from collections import defaultdict
-from itertools import chain, repeat
+
 
 class HasNotResetProgressError(Exception):
     pass

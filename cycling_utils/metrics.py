@@ -1,6 +1,8 @@
+from collections import defaultdict
+
 import torch
 import torch.distributed as dist
-from collections import defaultdict
+
 
 class MetricsTracker:
     '''
