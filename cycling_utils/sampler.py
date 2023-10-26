@@ -10,8 +10,10 @@ from torch.utils.data import Dataset, DistributedSampler
 class HasNotResetProgressError(Exception):
     pass
 
+
 class AdvancedTooFarError(Exception):
     pass
+
 
 class InterruptableDistributedSampler(DistributedSampler):
     def __init__(
@@ -52,7 +54,9 @@ class InterruptableDistributedSampler(DistributedSampler):
 
     def set_epoch(self, epoch):
         if not self._has_reset_progress:
-            raise HasNotResetProgressError("You must reset progress before setting epoch e.g. `sampler.reset_progress()`\nor use `with sampler.in_epoch(epoch)` instead of `sampler.set_epoch(epoch)`")
+            raise HasNotResetProgressError(
+                "You must reset progress before setting epoch e.g. `sampler.reset_progress()`\nor use `with sampler.in_epoch(epoch)` instead of `sampler.set_epoch(epoch)`"
+            )
         self.epoch = epoch
 
     def state_dict(self):
@@ -61,7 +65,9 @@ class InterruptableDistributedSampler(DistributedSampler):
     def load_state_dict(self, state_dict):
         self.progress = state_dict["progress"]
         if not self.progress <= self.num_samples:
-            raise AdvancedTooFarError(f"progress should be less than or equal to the number of samples. progress: {self.progress}, num_samples: {self.num_samples}")
+            raise AdvancedTooFarError(
+                f"progress should be less than or equal to the number of samples. progress: {self.progress}, num_samples: {self.num_samples}"
+            )
         self.epoch = state_dict["epoch"]
 
     def advance(self, n: int):
@@ -70,7 +76,9 @@ class InterruptableDistributedSampler(DistributedSampler):
         """
         self.progress += n
         if self.progress > self.num_samples:
-            raise AdvancedTooFarError("You have advanced too far. You can only advance up to the total size of the dataset.")
+            raise AdvancedTooFarError(
+                "You have advanced too far. You can only advance up to the total size of the dataset."
+            )
 
     def __iter__(self):
         if self.shuffle:
@@ -87,7 +95,9 @@ class InterruptableDistributedSampler(DistributedSampler):
             if padding_size <= len(indices):
                 indices += indices[:padding_size]
             else:
-                indices += (indices * math.ceil(padding_size / len(indices)))[:padding_size]
+                indices += (indices * math.ceil(padding_size / len(indices)))[
+                    :padding_size
+                ]
         else:
             # remove tail of data to make it evenly divisible.
             indices = indices[: self.total_size]
@@ -98,7 +108,7 @@ class InterruptableDistributedSampler(DistributedSampler):
         assert len(indices) == self.num_samples
 
         # slice from progress to pick up where we left off
-    
+
         for idx in indices[self.progress :]:
             yield idx
 
@@ -118,12 +128,12 @@ class InterruptableDistributedSampler(DistributedSampler):
         yield
         self._reset_progress()
 
-        
+
 class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
     def __init__(
         self,
         dataset: Dataset,
-        group_ids: list[int], 
+        group_ids: list[int],
         batch_size: int,
         num_replicas: int | None = None,
         rank: int | None = None,
@@ -132,14 +142,14 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         drop_last: bool = False,
     ) -> None:
         """
-        This is a DistributedSampler that can be suspended and resumed. 
-        This works by keeping track of the sample batches that have already been 
-        dispatched. 
-        
-        This InterruptableDistributedGroupedBatchSampler also enables the sampling 
-        strategy exhibited in the torch vision detection reference wherein batches 
-        are created from images from within the same 'group', defined in the 
-        torchvision example by similarity of image aspect ratio. 
+        This is a DistributedSampler that can be suspended and resumed.
+        This works by keeping track of the sample batches that have already been
+        dispatched.
+
+        This InterruptableDistributedGroupedBatchSampler also enables the sampling
+        strategy exhibited in the torch vision detection reference wherein batches
+        are created from images from within the same 'group', defined in the
+        torchvision example by similarity of image aspect ratio.
 
         https://github.com/pytorch/vision/tree/main/references/detection
 
@@ -150,7 +160,7 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         distinction from the InterruptableDistributedSampler which tracks progress
         in units of samples. The progress is reset to 0 at the end of each epoch.
 
-        The epoch is set to 0 at initialization and incremented at the start 
+        The epoch is set to 0 at initialization and incremented at the start
         of each epoch.
 
         Suspending and resuming the sampler is done by saving and loading the
@@ -179,7 +189,9 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
             if padding_size <= len(indices):
                 indices += indices[:padding_size]
             else:
-                indices += (indices * math.ceil(padding_size / len(indices)))[:padding_size]
+                indices += (indices * math.ceil(padding_size / len(indices)))[
+                    :padding_size
+                ]
         else:
             # remove tail of data to make dataset evenly divisible accross ranks
             indices = indices[: self.total_size]
@@ -192,9 +204,9 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         # PRE-COMPUTE GROUPED BATCHES
         buffer_per_group = defaultdict(list)
         samples_per_group = defaultdict(list)
-        self.num_batches = math.ceil(len(indices)/ self.batch_size)
+        self.num_batches = math.ceil(len(indices) / self.batch_size)
 
-        batches = [] # pre-computed so progress refers to batches, not samples.
+        batches = []  # pre-computed so progress refers to batches, not samples.
         for idx in indices:
             group_id = self.group_ids[idx]
             buffer_per_group[group_id].append(idx)
@@ -212,9 +224,13 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         if num_remaining > 0:
             # for the remaining batches, take first the buffers with the largest number
             # of elements
-            for group_id, _ in sorted(buffer_per_group.items(), key=lambda x: len(x[1]), reverse=True):
+            for group_id, _ in sorted(
+                buffer_per_group.items(), key=lambda x: len(x[1]), reverse=True
+            ):
                 remaining = self.batch_size - len(buffer_per_group[group_id])
-                samples_from_group_id = self._repeat_to_at_least(samples_per_group[group_id], remaining)
+                samples_from_group_id = self._repeat_to_at_least(
+                    samples_per_group[group_id], remaining
+                )
                 buffer_per_group[group_id].extend(samples_from_group_id[:remaining])
                 assert len(buffer_per_group[group_id]) == self.batch_size
                 batches.append(buffer_per_group[group_id])
@@ -225,7 +241,7 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         # Check that the batches are all good to go
         assert len(batches) == self.num_batches
         return batches
-    
+
     def _repeat_to_at_least(self, iterable, n):
         repeat_times = math.ceil(n / len(iterable))
         repeated = chain.from_iterable(repeat(iterable, repeat_times))
@@ -236,11 +252,15 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         self._has_reset_progress = True
 
     def set_epoch(self, epoch: int) -> None:
-        raise NotImplementedError("Use `with sampler.in_epoch(epoch)` instead of `sampler.set_epoch(epoch)`")
+        raise NotImplementedError(
+            "Use `with sampler.in_epoch(epoch)` instead of `sampler.set_epoch(epoch)`"
+        )
 
     def _set_epoch(self, epoch):
         if not self._has_reset_progress:
-            raise HasNotResetProgressError("You must reset progress before setting epoch e.g. `sampler.reset_progress()`\nor use `with sampler.in_epoch(epoch)` instead of `sampler.set_epoch(epoch)`")
+            raise HasNotResetProgressError(
+                "You must reset progress before setting epoch e.g. `sampler.reset_progress()`\nor use `with sampler.in_epoch(epoch)` instead of `sampler.set_epoch(epoch)`"
+            )
         self.epoch = epoch
         self.batches = self._create_batches()
 
@@ -250,7 +270,9 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
     def load_state_dict(self, state_dict):
         self.progress = state_dict["progress"]
         if not self.progress <= self.num_batches:
-            raise AdvancedTooFarError(f"progress should be less than or equal to the number of batches. progress: {self.progress}, num_batches: {self.num_batches}")
+            raise AdvancedTooFarError(
+                f"progress should be less than or equal to the number of batches. progress: {self.progress}, num_batches: {self.num_batches}"
+            )
         self.epoch = state_dict["epoch"]
 
     def advance(self):
@@ -259,12 +281,13 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         """
         self.progress += 1
         if self.progress > self.num_batches:
-            raise AdvancedTooFarError(f"You have advanced too far. You can only advance up to the total number of batches: {self.num_batches}.")
+            raise AdvancedTooFarError(
+                f"You have advanced too far. You can only advance up to the total number of batches: {self.num_batches}."
+            )
 
     def __iter__(self):
-
         # slice from progress to pick up where we left off
-        for batch in self.batches[self.progress:]:
+        for batch in self.batches[self.progress :]:
             yield batch
 
     def __len__(self):

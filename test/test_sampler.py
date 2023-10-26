@@ -7,8 +7,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
 
-from cycling_utils.sampler import (AdvancedTooFarError,
-                                   InterruptableDistributedSampler)
+from cycling_utils.sampler import AdvancedTooFarError, InterruptableDistributedSampler
 
 SEED = 13006555
 
