@@ -6,7 +6,7 @@ import os
 from cycling_utils import InterruptableDistributedSampler, atomic_torch_save, MetricsTracker
 
 class BaseCycler():
-    def __init__(self, model, dataloader, optimizer, save_path, scheduler=None, metrics_tracker=None, save_interval=100):
+    def __init__(self, model, dataloader, optimizer, save_path, rank, scheduler=None, metrics_tracker=None, save_interval=100):
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
@@ -17,7 +17,8 @@ class BaseCycler():
         self.iteration = 0
         self.epoch = 0
         # Register a pre forward hook
-        self.model.module.register_forward_pre_hook(self.save_state)
+        if rank == 0:
+            self.model.module.register_forward_pre_hook(self.save_state)
         if os.path.exists(self.save_path):
             self.load()
 
@@ -62,4 +63,3 @@ class BaseCycler():
         self.epoch += 1
         self.iteration = 0
         self.dataloader.sampler.set_epoch(self.epoch)
-        self.metrics_tracker["train"].end_epoch()
