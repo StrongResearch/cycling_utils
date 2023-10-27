@@ -7,6 +7,7 @@ from cycling_utils import InterruptableDistributedSampler, atomic_torch_save, Me
 
 class BaseCycler():
     def __init__(self, model, dataloader, optimizer, save_path, rank, scheduler=None, metrics_tracker=None, save_interval=100):
+        
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
@@ -14,8 +15,12 @@ class BaseCycler():
         self.save_path = save_path
         self.save_interval = save_interval
         self.metrics_tracker = metrics_tracker
+        self.dataset_size = len(dataloader.dataset)
+        self.sampler_replicas = dataloader.sampler.num_replicas
+
         self.iteration = 0
         self.epoch = 0
+        
         # Register a pre forward hook
         if rank == 0:
             self.model.module.register_forward_pre_hook(self.save_state)
@@ -41,7 +46,7 @@ class BaseCycler():
          
         _, batch = args
         # ignore first iteration - model params unchanged
-        
+
         if self.iteration % self.save_interval == 0 and self.model.training and self.iteration != 0:
             state = {
                 'model_state': self.model.state_dict(),
@@ -55,6 +60,12 @@ class BaseCycler():
             atomic_torch_save(state, self.save_path)
         
             self.dataloader.sampler.advance(len(batch[0]))
+        
+        print(f"prog: {((self.dataloader.sampler.progress - 1) * len(batch[0])) * self.sampler_replicas}")
+        print(f"dataset size: {self.dataset_size}")
+        if self.dataset_size == ((self.dataloader.sampler.progress - 1) * len(batch[0])) * self.sampler_replicas:
+
+            self.on_epoch_end()
 
         self.iteration += 1
 
