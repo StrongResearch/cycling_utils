@@ -1,11 +1,14 @@
 import os
+
 import pytest
 import torch
 import torch.distributed as dist
-from torch.utils.data import TensorDataset, DistributedSampler, DataLoader
-from hypothesis import given, assume
+from hypothesis import assume, given
 from hypothesis import strategies as st
-from cycling_utils.sampler import InterruptableDistributedSampler, AdvancedTooFarError
+from torch.utils.data import DataLoader, DistributedSampler, TensorDataset
+
+from cycling_utils.sampler import (AdvancedTooFarError,
+                                   InterruptableDistributedSampler)
 
 SEED = 13006555
 
