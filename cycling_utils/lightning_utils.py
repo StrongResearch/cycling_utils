@@ -14,9 +14,6 @@ class EpochHandler(L.Callback):
     def on_train_epoch_end(self, trainer, pl_module):
         self.sampler._reset_progress()
 
-    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
-        self.sampler.advance(len(batch))
-
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         self.sampler.advance(len(batch))
 

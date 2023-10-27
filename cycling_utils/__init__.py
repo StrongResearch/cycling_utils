@@ -1,4 +1,4 @@
-from .lightning_utils import EpochHandler
+
 from .metrics import MetricsTracker
 from .sampler import (InterruptableDistributedGroupedBatchSampler,
                       InterruptableDistributedSampler)
@@ -9,7 +9,12 @@ __all__ = [
     "InterruptableDistributedSampler",
     "InterruptableDistributedGroupedBatchSampler",
     "atomic_torch_save",
-    "EpochHandler",
     "MetricsTracker",
-    "TimestampedTimer",
+    "TimestampedTimer"
 ]
+
+try:
+    from .lightning_utils import EpochHandler
+    __all__.append("EpochHandler")
+except:
+    pass
