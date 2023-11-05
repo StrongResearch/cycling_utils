@@ -1,7 +1,7 @@
 import math
 from collections import defaultdict
 from contextlib import contextmanager
-from itertools import chain, repeat, islice
+from itertools import chain, islice, repeat
 
 import torch
 from torch.utils.data import Dataset, DistributedSampler
@@ -308,6 +308,7 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         yield
         self._reset_progress()
 
+
 class InterruptableDistributedStreamSampler(DistributedSampler):
     def __init__(
         self,
@@ -321,21 +322,21 @@ class InterruptableDistributedStreamSampler(DistributedSampler):
         """
         This is a DistributedSampler that can be suspended and resumed.
 
-        This works by keeping track of the total number of samples that have 
+        This works by keeping track of the total number of samples that have
         been dispatched to the dataloader over the course of training.
 
         This sampler does not store any memory of "epoch" but instead yields
-        examples from an infinite stream generated from the dataset. The 
-        implementation is based on the TrainingSampler from Detectron2: 
+        examples from an infinite stream generated from the dataset. The
+        implementation is based on the TrainingSampler from Detectron2:
 
         https://detectron2.readthedocs.io/en/latest/_modules/detectron2/data/samplers/distributed_sampler.html
 
         The progress is incremented by the number of samples returned by the
-        sampler.Suspending and resuming the sampler is done by saving and loading 
+        sampler.Suspending and resuming the sampler is done by saving and loading
         the state dict. The state dict contains the epoch and progress. This works
         because the permutation of the dataset is deterministic given the seed.
 
-        This sampler is suitable for cases where the user has no particular need 
+        This sampler is suitable for cases where the user has no particular need
         to track epochs, and neatly lends itself to distributed training wherein
         the user is otherwise forced to trim or extend their dataset to align
         with the world size for the training run.
@@ -346,7 +347,7 @@ class InterruptableDistributedStreamSampler(DistributedSampler):
         self.dataset_len = len(dataset)
 
     def _reset_progress(self):
-        self.progress = 0 # number of samples yielded
+        self.progress = 0  # number of samples yielded
 
     def state_dict(self):
         return {"progress": self.progress}
@@ -361,7 +362,9 @@ class InterruptableDistributedStreamSampler(DistributedSampler):
         self.progress += n
 
     def __iter__(self):
-        yield from islice(self._infinite_indices(), self.rank + self.progress, None, self.num_replicas)
+        yield from islice(
+            self._infinite_indices(), self.rank + self.progress, None, self.num_replicas
+        )
 
     def _infinite_indices(self):
         g = torch.Generator()
