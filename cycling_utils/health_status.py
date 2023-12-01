@@ -4,49 +4,59 @@ import socket
 from collections import defaultdict
 import torch.distributed as dist
 
+def _checkup_(model, weight_check_fun=None, grad_check_fun=None, path=[], name="root"):
+    '''
+    Recursively checks the health of weights and grads of a model.
+    check_fun should be a function which takes a single value and returns a boolean where True should
+    indicate that the value is acceptable to the user.
+    '''
+    local_results = []  # List to store results for each parameter
+
+    if len(list(model.named_children())) == 0:
+        for ptensor in model.parameters():
+            weight_nans = torch.isnan(ptensor).sum().item()
+            weight_infs = (~torch.isfinite(ptensor)).sum().item()
+            weight_check = 0
+            if weight_check_fun is not None:
+                weight_check = (~ptensor.apply_(weight_check_fun)).sum().item()
+
+            grad_nans, grad_infs, grad_check = 0, 0, 0
+            if ptensor.grad is not None:
+                grad_nans = torch.isnan(ptensor.grad).sum().item()
+                grad_infs = (~torch.isfinite(ptensor.grad)).sum().item()
+                if grad_check_fun is not None:
+                    grad_check = (~ptensor.grad.apply_(grad_check_fun)).sum().item()
+
+            # Store results for this parameter
+            result = {
+                'weight_nans': weight_nans,
+                'weight_infs': weight_infs,
+                'weight_custom': weight_check,
+                'grad_nans': grad_nans,
+                'grad_infs': grad_infs,
+                'grad_custom': grad_check,
+            }
+
+            local_results.append(result)
+        
+        assert isinstance(local_results, list)
+        return local_results
+
+    else:
+        for n, c in model.named_children():
+            # Recursively check children
+            child_results = _checkup_(c, weight_check_fun, grad_check_fun, path + [name], n)
+            assert isinstance(child_results, list)
+            assert isinstance(local_results, list)
+            local_results.extend(child_results)
+        return local_results
+
 class HealthChecker:
     def __init__(self):
         self.host_faults = dict()
 
-    def check_grads(self, model, weight_check_fun=None, grad_check_fun=None, path=[], name="root"):
-        '''
-        Recursively checks the health of weights and grads of a model.
-        check_fun should be a function which takes a single value and returns a boolean where True should
-        indicate that the value is acceptable to the user.
-        '''
-        local_results = []  # List to store results for each parameter
-
-        if len(list(model.named_children())) == 0:
-            for pname, ptensor in list(filter(lambda ptensor: ptensor[1].grad is not None, model.named_parameters())):
-
-                weight_nans = torch.isnan(ptensor).sum()
-                weight_infs = (~torch.isfinite(ptensor)).sum()
-                weight_check = 0
-                if weight_check_fun is not None:
-                    weight_check = (~ptensor.apply_(weight_check_fun)).sum()
-
-                grad_nans = torch.isnan(ptensor.grad.data).sum()
-                grad_infs = (~torch.isfinite(ptensor.grad.data)).sum()
-                grad_check = 0
-                if grad_check_fun is not None:
-                    grad_check = (~ptensor.grad.data.apply_(grad_check_fun)).sum()
-
-                # Store results for this parameter
-                result = {
-                    'weight_nans': weight_nans.item(),
-                    'weight_infs': weight_infs.item(),
-                    'weight_custom': weight_check.item(),
-                    'grad_nans': grad_nans.item(),
-                    'grad_infs': grad_infs.item(),
-                    'grad_custom': grad_check.item(),
-                }
-
-                local_results.append(result)
-
-        else:
-            for n, c in model.named_children():
-                # Recursively check children
-                local_results.extend(self.check_grads(c, weight_check_fun, grad_check_fun, path + [name], n))
+    def checkup(self, model, weight_check_fun=None, grad_check_fun=None):
+        local_results = _checkup_(model, weight_check_fun, grad_check_fun)
 
         # Summarise the faults that have occurred by type on this device
         local_summary = defaultdict(int)
@@ -66,15 +76,15 @@ class HealthChecker:
         # Encode host / device names for reduction from all ranks
         host_device = f"HOST {socket.gethostname()}, GPU {os.environ['LOCAL_RANK']}" # host / device name
         host_device = 'X'+host_device if len(host_device) < 16 else host_device # Padded with an X to standardise length
-        host_device = torch.tensor(list(host_device.encode('utf-8')), device='cuda', requires_grad=False) # Encode as tensor of ints
-        global_hosts = torch.zeros((int(os.environ["WORLD_SIZE"]), 16), device='cuda', requires_grad=False)
+        host_device = torch.tensor(list(host_device.encode('utf-8')), dtype=torch.uint8, device='cuda', requires_grad=False) # Encode as tensor of ints
+        global_hosts = torch.zeros((int(os.environ["WORLD_SIZE"]), 16), dtype=torch.uint8, device='cuda', requires_grad=False)
         global_hosts[int(os.environ["RANK"])] = host_device
 
         # Reduce the global hosts tensor onto rank 0
         dist.reduce(global_hosts, dst=0)
 
         # Decode host names back to english
-        global_hosts = [[chr(c) for c in host] for host in global_hosts] # Decode back to characters
+        global_hosts = [[chr(c) for c in host] for host in global_hosts.cpu().numpy()] # Decode back to characters
         global_hosts = [host[1:] if host[0]=='X' else host for host in global_hosts] # Remove padding if any
         global_hosts = [''.join(host) for host in global_hosts]
 
@@ -84,3 +94,8 @@ class HealthChecker:
                 self.host_faults[host] += faults
             else:
                 self.host_faults[host] = faults
+
+    def report(self):
+        if int(os.environ["RANK"]) == 0:
+            for h,f in self.host_faults.items():
+                print(f"HOST {h} WEIGHT:: nans: {f[0]:,.0f} infs: {f[1]:,.0f} cust: {f[2]:,.0f}, GRAD:: nans: {f[3]:,.0f} infs: {f[4]:,.0f} cust: {f[5]:,.0f}")
