@@ -18,14 +18,14 @@ def _checkup_(model, weight_check_fun=None, grad_check_fun=None, path=[], name="
             weight_infs = (~torch.isfinite(ptensor)).sum().item()
             weight_check = 0
             if weight_check_fun is not None:
-                weight_check = (~ptensor.apply_(weight_check_fun)).sum().item()
+                weight_check = (~ptensor.cpu().apply_(weight_check_fun).to(torch.bool)).sum().item()
 
             grad_nans, grad_infs, grad_check = 0, 0, 0
             if ptensor.grad is not None:
                 grad_nans = torch.isnan(ptensor.grad).sum().item()
                 grad_infs = (~torch.isfinite(ptensor.grad)).sum().item()
                 if grad_check_fun is not None:
-                    grad_check = (~ptensor.grad.apply_(grad_check_fun)).sum().item()
+                    grad_check = (~ptensor.grad.cpu().apply_(grad_check_fun).to(torch.bool)).sum().item()
 
             # Store results for this parameter
             result = {
@@ -91,9 +91,9 @@ class HealthChecker:
         # Update count of faults on each device
         for host, faults in zip(global_hosts, global_faults):
             if host in self.host_faults:
-                self.host_faults[host] += faults
+                self.host_faults[host] += faults.cpu().numpy()
             else:
-                self.host_faults[host] = faults
+                self.host_faults[host] = faults.cpu().numpy()
 
     def report(self):
         if int(os.environ["RANK"]) == 0:
