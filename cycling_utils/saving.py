@@ -93,8 +93,7 @@ class AtomicDirectory:
                 next_checkpoint_directory = os.path.join(self.output_directory, f"{self.chk_dir_prefix}0")
             # Create new checkpoint_directory to save to
             os.mkdir(next_checkpoint_directory)
-            assert os.path.isdir(next_checkpoint_directory) and len(os.listdir(next_checkpoint_directory)) == 0, 
-                "ERROR: fault creating new save dir."
+            assert os.path.isdir(next_checkpoint_directory) and len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: fault creating new save dir."
             # Return path to save to
             return next_checkpoint_directory
         else:
