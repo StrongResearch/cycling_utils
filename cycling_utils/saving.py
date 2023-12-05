@@ -67,7 +67,6 @@ class AtomicDirectory:
         self.cleanup = cleanup
 
     def prepare_checkpoint_directory(self):
-        # if int(os.environ["RANK"]) == 0:
         # Catalogue any checkpoint directories already in the output_directory
         checkpoints = [
             d
@@ -132,8 +131,6 @@ class AtomicDirectory:
             ), "ERROR: fault creating new save dir."
         # Return path to save to
         return next_checkpoint_directory
-        # else:
-        #     return None
 
     def atomic_symlink(self, checkpoint_directory):
         if int(os.environ["RANK"]) == 0:
