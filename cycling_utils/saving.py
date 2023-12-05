@@ -58,7 +58,7 @@ class AtomicDirectory:
         self.cleanup = cleanup
 
     def prepare_checkpoint_directory(self):
-        if os.environ["RANK"] == 0:
+        if int(os.environ["RANK"]) == 0:
             # Catalogue any checkpoint directories already in the output_directory
             checkpoints = [
                 d for d in os.listdir(self.output_directory) 
@@ -68,7 +68,7 @@ class AtomicDirectory:
                 # Full paths to checkpoint directories
                 checkpoint_paths = [os.path.join(self.output_directory,d) for d in checkpoints]
                 # Obtain the checkpoint indices from the directory names
-                checkpoint_indices = [int(d[3:]) for d in checkpoints]
+                checkpoint_indices = [int(d[len(self.chk_dir_prefix):]) for d in checkpoints]
                 # Default latest path and index
                 latest_path, latest_index = None, -1
                 # If there is also a valid symlink in the output_directory
@@ -100,8 +100,9 @@ class AtomicDirectory:
             return None
     
     def atomic_symlink(self, checkpoint_directory):
-        if os.environ["RANK"] == 0:
+        if int(os.environ["RANK"]) == 0:
             # Create a new symlink with name suffixed with temp
-            os.symlink(checkpoint_directory, self.symlink_name+"_temp")
+            parent_dir = Path(checkpoint_directory).parent.absolute()
+            os.symlink(checkpoint_directory, os.path.join(parent_dir, self.symlink_name+"_temp"))
             # Replace any existing current symlink with the new temp symlink
-            os.replace(self.symlink_name+"_temp", self.symlink_name)
+            os.replace(os.path.join(parent_dir, self.symlink_name+"_temp"), os.path.join(parent_dir, self.symlink_name))
