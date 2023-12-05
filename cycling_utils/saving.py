@@ -4,14 +4,16 @@ from shutil import rmtree
 
 import torch
 
+
 def atomic_torch_save(obj, f: str | Path, **kwargs):
     f = str(f)
     temp_f = f + ".temp"
     torch.save(obj, temp_f, **kwargs)
     os.replace(temp_f, f)
 
+
 class AtomicDirectory:
-    '''
+    """
     This is an extension on the concept of atomic saving to support saving to directories, which is useful where it is
     necessary to use a specific saving technology that is not easily adapted to the dictionary-based torch save pattern.
 
@@ -25,7 +27,7 @@ class AtomicDirectory:
         cleanup: whether to delete old checkpoint directories and their contents.
 
     Example usage (saving every training batch) is as follows. Note that saver.prepare_checkpoint_directory() is run
-    at the start of the iteration in which a checkpoint is saved. This is to ensure that the clean-up step is 
+    at the start of the iteration in which a checkpoint is saved. This is to ensure that the clean-up step is
     prioritised and that subsequent work is not lost.
 
     >>> # Initialize the AtomicDirectory
@@ -50,8 +52,15 @@ class AtomicDirectory:
 
     >>>         # Updating symlink to direct to the latest checkpoint
     >>>         saver.atomic_symlink(checkpoint_directory)
-    '''
-    def __init__(self, output_directory, symlink_name="latest_pt", chk_dir_prefix="CHK", cleanup=True):
+    """
+
+    def __init__(
+        self,
+        output_directory,
+        symlink_name="latest_pt",
+        chk_dir_prefix="CHK",
+        cleanup=True,
+    ):
         self.output_directory = output_directory
         self.symlink_name = symlink_name
         self.chk_dir_prefix = chk_dir_prefix
@@ -61,48 +70,77 @@ class AtomicDirectory:
         if int(os.environ["RANK"]) == 0:
             # Catalogue any checkpoint directories already in the output_directory
             checkpoints = [
-                d for d in os.listdir(self.output_directory) 
-                if os.path.isdir(os.path.join(self.output_directory,d)) and d.startswith(self.chk_dir_prefix)
+                d
+                for d in os.listdir(self.output_directory)
+                if os.path.isdir(os.path.join(self.output_directory, d))
+                and d.startswith(self.chk_dir_prefix)
             ]
             if checkpoints:
                 # Full paths to checkpoint directories
-                checkpoint_paths = [os.path.join(self.output_directory,d) for d in checkpoints]
+                checkpoint_paths = [
+                    os.path.join(self.output_directory, d) for d in checkpoints
+                ]
                 # Obtain the checkpoint indices from the directory names
-                checkpoint_indices = [int(d[len(self.chk_dir_prefix):]) for d in checkpoints]
+                checkpoint_indices = [
+                    int(d[len(self.chk_dir_prefix) :]) for d in checkpoints
+                ]
                 # Default latest path and index
                 latest_path, latest_index = None, -1
                 # If there is also a valid symlink in the output_directory
-                if os.path.exists(os.path.join(self.output_directory, self.symlink_name)):
+                if os.path.exists(
+                    os.path.join(self.output_directory, self.symlink_name)
+                ):
                     # The full path to the current checkpoint directory is the one pointed to by the symlink
-                    latest_path = os.readlink(os.path.join(self.output_directory, self.symlink_name))
+                    latest_path = os.readlink(
+                        os.path.join(self.output_directory, self.symlink_name)
+                    )
                     # The index of the latest checkpoint
                     latest_index = int(latest_path.split(self.chk_dir_prefix)[1])
                 # Obsolete checkpoint directories
                 if self.cleanup:
                     # All but the latest path
-                    obsolete = [path for path in checkpoint_paths if path!=latest_path]
+                    obsolete = [
+                        path for path in checkpoint_paths if path != latest_path
+                    ]
                 else:
                     # Any with index greater than the latest path index
-                    obsolete = [d for d,i in zip(checkpoint_paths,checkpoint_indices) if i>latest_index]
+                    obsolete = [
+                        d
+                        for d, i in zip(checkpoint_paths, checkpoint_indices)
+                        if i > latest_index
+                    ]
                 # Delete obsolete
                 for d in obsolete:
                     rmtree(d)
                 # New checkpoint_directory to save to
-                next_checkpoint_directory = os.path.join(self.output_directory, f"{self.chk_dir_prefix}{latest_index + 1}")
+                next_checkpoint_directory = os.path.join(
+                    self.output_directory, f"{self.chk_dir_prefix}{latest_index + 1}"
+                )
             else:
-                next_checkpoint_directory = os.path.join(self.output_directory, f"{self.chk_dir_prefix}0")
+                next_checkpoint_directory = os.path.join(
+                    self.output_directory, f"{self.chk_dir_prefix}0"
+                )
             # Create new checkpoint_directory to save to
             os.mkdir(next_checkpoint_directory)
-            assert os.path.isdir(next_checkpoint_directory) and len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: fault creating new save dir."
+            assert (
+                os.path.isdir(next_checkpoint_directory)
+                and len(os.listdir(next_checkpoint_directory)) == 0
+            ), "ERROR: fault creating new save dir."
             # Return path to save to
             return next_checkpoint_directory
         else:
             return None
-    
+
     def atomic_symlink(self, checkpoint_directory):
         if int(os.environ["RANK"]) == 0:
             # Create a new symlink with name suffixed with temp
             parent_dir = Path(checkpoint_directory).parent.absolute()
-            os.symlink(checkpoint_directory, os.path.join(parent_dir, self.symlink_name+"_temp"))
+            os.symlink(
+                checkpoint_directory,
+                os.path.join(parent_dir, self.symlink_name + "_temp"),
+            )
             # Replace any existing current symlink with the new temp symlink
-            os.replace(os.path.join(parent_dir, self.symlink_name+"_temp"), os.path.join(parent_dir, self.symlink_name))
+            os.replace(
+                os.path.join(parent_dir, self.symlink_name + "_temp"),
+                os.path.join(parent_dir, self.symlink_name),
+            )
