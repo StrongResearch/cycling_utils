@@ -58,6 +58,7 @@ class MetricsTracker:
     def update(self, metrics: dict):
         for m, v in metrics.items():
             self.local[m] += v
+        return self
 
     def reduce(self):
         names, local = zip(*self.local.items())
@@ -68,11 +69,25 @@ class MetricsTracker:
         self.local = defaultdict(float, zip(names, local.tolist()))
         for k in self.local:
             self.agg[k] += self.local[k]
+        return self
 
     def reset_local(self):
         self.local = defaultdict(float)
+        return self
 
     def end_epoch(self):
         self.epoch_reports.append(dict(self.agg))
-        self.local = defaultdict(float)
         self.agg = defaultdict(float)
+        self.reset_local()
+        return self
+
+    def state_dict(self):
+        # Note local is not saved as local results will not be rank consistent
+        return {"epoch_reports": self.epoch_reports, "agg": self.agg}
+
+    def load_state_dict(self, state_dict):
+        self.epoch_reports = state_dict["epoch_reports"]
+        self.agg = state_dict["agg"]
+        self.reset_local()
+        return self
+        
