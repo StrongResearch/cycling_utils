@@ -1,12 +1,15 @@
 from .metrics import MetricsTracker
 from .sampler import (InterruptableDistributedGroupedBatchSampler,
-                      InterruptableDistributedSampler)
+                      InterruptableDistributedSampler,
+                      InterruptableSampler)
+from .datasets import ImageFolderShardInMem
 from .saving import AtomicDirectory, atomic_torch_save
 from .timing import TimestampedTimer
 
 __all__ = [
     "InterruptableDistributedSampler",
     "InterruptableDistributedGroupedBatchSampler",
+    "InterruptableSampler"
     "atomic_torch_save",
     "AtomicDirectory",
     "MetricsTracker",

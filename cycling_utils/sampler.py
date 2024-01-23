@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from itertools import chain, repeat
 
 import torch
-from torch.utils.data import Dataset, DistributedSampler
+from torch.utils.data import Dataset, DistributedSampler, Sampler
 
 
 class HasNotResetProgressError(Exception):
@@ -305,5 +305,97 @@ class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
         ```
         """
         self._set_epoch(epoch)
+        yield
+        self._reset_progress()
+
+
+class InterruptableSampler(Sampler):
+    def __init__(
+        self,
+        dataset: Dataset,
+        num_replicas: int | None = None,
+        rank: int | None = None,
+        shuffle: bool = True,
+        seed: int = 0,
+        drop_last: bool = False,
+    ) -> None:
+        """
+        This 'InterruptibleSampler' class is similar to the 'InterruptibleDistributedSampler' class in that it keeps
+        track of progress through the dataset, but does not include functionality to distribute the dataset accross
+        GPUs in the cluster.
+
+        This class is intended for use with the 'ImageFolderShardInMem' dataset class which achieves distribution of 
+        an ImageFolder-like dataset in shards to each GPU in the cluster.
+        """
+        super().__init__()
+        self.progress = 0
+        self._has_reset_progress = True
+        self.epoch = 0
+        self.dataset = dataset
+        self.shuffle = shuffle
+        self.seed = seed
+        self.drop_last = drop_last
+
+    def _reset_progress(self):
+        self.progress = 0
+        self._has_reset_progress = True
+
+    def set_epoch(self, epoch):
+        if not self._has_reset_progress:
+            raise HasNotResetProgressError(
+                "You must reset progress before setting epoch e.g. `sampler.reset_progress()`\nor use `with sampler.in_epoch(epoch)` instead of `sampler.set_epoch(epoch)`"
+            )
+        self.epoch = epoch
+
+    def state_dict(self):
+        return {"progress": self.progress, "epoch": self.epoch}
+
+    def load_state_dict(self, state_dict):
+        self.progress = state_dict["progress"]
+        if self.progress > len(self.dataset):
+            raise AdvancedTooFarError(
+                f"Progress [{self.progress}] should be less than or equal to the size of the dataset [{len(self.dataset)}]"
+            )
+        self.epoch = state_dict["epoch"]
+
+    def advance(self, n: int):
+        """
+        Record that n samples have been consumed.
+        """
+        self.progress += n
+        if self.progress > len(self.dataset):
+            raise AdvancedTooFarError(
+                "You have advanced too far. You can only advance up to the total size of the dataset."
+            )
+        
+    def __len__(self):
+        return len(self.dataset)
+
+    def __iter__(self):
+        if self.shuffle:
+            # deterministically shuffle based on epoch and seed
+            g = torch.Generator()
+            g.manual_seed(self.seed + self.epoch)
+            indices = torch.randperm(len(self.dataset), generator=g).tolist()  # type: ignore[arg-type]
+        else:
+            indices = list(range(len(self.dataset)))  # type: ignore[arg-type]
+
+        # slice from progress to pick up where we left off
+        for idx in indices[self.progress :]:
+            yield idx
+
+    @contextmanager
+    def in_epoch(self, epoch):
+        """
+        This context manager is used to set the epoch. It is used like this:
+
+        ```
+        for epoch in range(0, 10):
+            with sampler.in_epoch(epoch):
+                for step, (x, ) in enumerate(dataloader):
+                    # work would be done here...
+        ```
+        """
+        self.set_epoch(epoch)
         yield
         self._reset_progress()
