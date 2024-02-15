@@ -7,9 +7,9 @@ from torchvision.datasets.folder import make_dataset, find_classes, pil_loader
     
 IMG_EXTENSIONS = (".jpg", ".jpeg", ".png", ".ppm", ".bmp", ".pgm", ".tif", ".tiff", ".webp")
 
-class ImageFolderShardInMem:
+class DistributedShardedDataset:
     """
-    This 'ImageFolderShardInMem' dataset class is based on the ImageFolder dataset class by pytorch, and is designed 
+    This 'DistributedShardedDataset' dataset class is based on the ImageFolder dataset class by pytorch, and is designed 
     to enable instantiation of a unique dataset for each GPU with a (potentially overlapping) shard of the underlying 
     dataset.
 
