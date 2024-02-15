@@ -324,7 +324,7 @@ class InterruptableSampler(Sampler):
         track of progress through the dataset, but does not include functionality to distribute the dataset accross
         GPUs in the cluster.
 
-        This class is intended for use with the 'ImageFolderShardInMem' dataset class which achieves distribution of 
+        This class is intended for use with the 'DistributedShardedDataset' dataset class which achieves distribution of 
         an ImageFolder-like dataset in shards to each GPU in the cluster.
         """
         super().__init__()
