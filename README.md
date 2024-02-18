@@ -42,7 +42,7 @@ for batch in loader:
 
 ### dataset sharding
 
-It is common for training code to move the dataset to the GPU before starting training. In some cases, however, the available VRAM on a single GPU will be insufficient to store the entire dataset. In that case it may be possible to shard the dataset across all GPUs in the cluster so that each GPU hosts a potentially disjoint subset of the whole dataset. We provide a Dataset for this purpose, which is based on the DatasetFolder (or ImageFolder) dataset from Torchvision. To complement this we also provide a simplified sampler which performs a similar function to the InterruptableDistributedSampler above, but does not same selectively to distribute the data across the cluster as this is taken care of by the dataset.
+It is common for training code to move the dataset to the GPU before starting training. In some cases the available VRAM on a single GPU will be insufficient to store the entire dataset. In that case it may be possible to shard the dataset across all GPUs in the cluster so that each GPU hosts a potentially disjoint subset of the whole dataset. We provide a Dataset for this purpose, which is based on the DatasetFolder (or ImageFolder) dataset from Torchvision. To complement this we also provide a simplified sampler which performs a similar function to the InterruptableDistributedSampler above, but does not same selectively to distribute the data across the cluster as this is taken care of by the dataset.
 
 ```bash
 from cycling_utils import DistributedShardedDataset, InterruptibleSampler
@@ -62,7 +62,6 @@ loader = DataLoader(dataset, sampler=sampler)
 ### atomic saving
 
 If a process writing to a checkpoint (eg `latest.pt`) is interrupted, it can corrupt the file. If you try and resume from a corrupted checkpoint, this is going to fail your job, and you are going to have to go back to an earlier checkpoint, wasting time. To remedy this, you need to save in an atomic way - only making making sure the file is written if it suceeds. For this, we provide a drop in replacement for `torch.save`:
-
 ```
 from cycling_utils import atomic_torch_save
 
@@ -76,6 +75,32 @@ atomic_torch_save({
   "optimizer":optimizer.state_dict()
 })
 ```
+Alternatively it is often necessary to save multiple files which together make up your checkpoint, such that the checkpoint is not easily packaged as a dictionary object above. For this we have developed the AtomicDirectory saver which can be used to save checkpoints to successive directories, potentially removing redundant checkpoint directories as you go, in a way which is atomic.
+```
+# Import
+from cycling_utils import AtomicDirectory
+saver = AtomicDirectory(output_directory)
 
+# Resume
+latest_sym = os.path.join(output_directory, saver.symlink_name)
+if os.path.exists(latest_sym):
+  latest_path = os.readlink(latest_sym)
+  # Load files from latest_path
+  ...
+
+# Train
+for epoch in epochs:
+  for batch in batches:
+
+    # Prepare the checkpoint directory before starting iteration
+    checkpoint_directory = saver.prepare_checkpoint_directory()
+
+    # Saving files to the checkpoint_directory
+    torch.save(obj, checkpoint_directory)
+    ...
+
+    # Finalzing checkpoint directory
+    saver.atomic_symlink(checkpoint_directory)
+```
 
 
