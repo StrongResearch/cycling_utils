@@ -75,7 +75,7 @@ atomic_torch_save({
   "optimizer":optimizer.state_dict()
 })
 ```
-Alternatively it is often necessary to save multiple files which together make up your checkpoint, such that the checkpoint is not easily packaged as a dictionary object above. For this we have developed the AtomicDirectory saver which can be used to save checkpoints to successive directories, potentially removing redundant checkpoint directories as you go, in a way which is atomic.
+Alternatively it is often necessary to save multiple files which together make up your checkpoint, so that the checkpoint is not easily packaged as a dictionary object above. For this we have developed the AtomicDirectory saver which can be used to save checkpoints to successive directories, potentially removing redundant checkpoint directories as you go, in a way which is atomic.
 ```
 # Import
 from cycling_utils import AtomicDirectory
