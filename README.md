@@ -4,33 +4,16 @@ Utilities for cycling jobs on ISC infra or making checkpointing more robust.
 
 ## features 
 
-Regardless of whether it's a hardware failure or you are cycling jobs on ISC infra, the ability to resume a machine learning job from a checkpoint in a robust way should be important for anyone. These utilities have several useful helpers for making resuming from a checkpoint more safe:
+Regardless of whether it's a hardware failure or you are cycling jobs on ISC infra, the ability to resume a machine learning job from a checkpoint in a robust way should be important for anyone. These utilities have several useful helpers for  safely resuming from a checkpoint, importantly:
+- Interruptable sampling
+- Dataset Sharding
+- Atomic saving
 
-- Atomic torch.save
-- Interruptable distributed sampler for torch data loaders 
-- Torch lightning integration
-
-### atomic saving
-
-If a process writing to a checkpoint (eg `latest.pt`) is interrupted, it can corrupt the file. If you try and resume from a corrupted checkpoint, this is going to fail your job, and you are going to have to go back to an earlier checkpoint, wasting time. To remedy this, you need to save in an atomic way - only making making sure the file is written if it suceeds. For this, we provide a drop in replacement for `torch.save`:
-
-```
-from cycling_utils import atomic_torch_save
-
-# usual ml code
-model = ...
-optimizer = ...  
-
-# save state dicts and anything else like usual!
-atomic_torch_save({
-  "model":model.state_dict(),
-  "optimizer":optimizer.state_dict()
-})
-```
+You will also find here some helpful utilities for tracking your metrics and logging progress. 
 
 ### interruptable sampling
 
-Another useful utility is to keep track of where you are in a dataset. This is so you can resume from the last sample rather than oversampling from the beginning. We provide a sampler for torch dataloaders which has a state dict so it can be saved in a checkpoint. Roughly how it works:
+It is important when suspending and resuming training to pick up right where you left off, including which epoch and how far through that epoch you had progressed. We provide a sampler for torch dataloaders which has a state dict so it can be saved in a checkpoint. Roughly how it works:
 
 ```
 from cycling_utils import InterruptableDistributedSampler
@@ -56,4 +39,43 @@ for batch in loader:
     # anything else
   })
 ```
+
+### dataset sharding
+
+It is common for training code to move the dataset to the GPU before starting training. In some cases, however, the available VRAM on a single GPU will be insufficient to store the entire dataset. In that case it may be possible to shard the dataset across all GPUs in the cluster so that each GPU hosts a potentially disjoint subset of the whole dataset. We provide a Dataset for this purpose, which is based on the DatasetFolder (or ImageFolder) dataset from Torchvision. To complement this we also provide a simplified sampler which performs a similar function to the InterruptableDistributedSampler above, but does not same selectively to distribute the data across the cluster as this is taken care of by the dataset.
+
+```bash
+from cycling_utils import DistributedShardedDataset, InterruptibleSampler
+
+dataset = DistributedShardedDataset(
+  root=root,
+  rank=rank,
+  world_size=world_size,
+  samples_pct_per_replica=samples_pct_per_replica
+)
+sampler  = InterruptibleSampler(dataset)
+loader = DataLoader(dataset, sampler=sampler)
+
+# proceed as above
+```
+
+### atomic saving
+
+If a process writing to a checkpoint (eg `latest.pt`) is interrupted, it can corrupt the file. If you try and resume from a corrupted checkpoint, this is going to fail your job, and you are going to have to go back to an earlier checkpoint, wasting time. To remedy this, you need to save in an atomic way - only making making sure the file is written if it suceeds. For this, we provide a drop in replacement for `torch.save`:
+
+```
+from cycling_utils import atomic_torch_save
+
+# usual ml code
+model = ...
+optimizer = ...  
+
+# save state dicts and anything else like usual!
+atomic_torch_save({
+  "model":model.state_dict(),
+  "optimizer":optimizer.state_dict()
+})
+```
+
+
 
