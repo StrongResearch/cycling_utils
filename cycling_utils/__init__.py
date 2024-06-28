@@ -15,10 +15,3 @@ __all__ = [
     "MetricsTracker",
     "TimestampedTimer",
 ]
-
-try:
-    from .lightning_utils import EpochHandler
-
-    __all__.append("EpochHandler")
-except:
-    pass
