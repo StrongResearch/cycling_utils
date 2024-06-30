@@ -59,12 +59,17 @@ class AtomicDirectory:
         output_directory,
         symlink_name="latest_pt",
         chk_dir_prefix="CHK",
-        cleanup=True,
+        keep_last=5,
     ):
         self.output_directory = output_directory
         self.symlink_name = symlink_name
         self.chk_dir_prefix = chk_dir_prefix
-        self.cleanup = cleanup
+        self.keep_last = keep_last
+
+        try:
+            os.makedirs(output_directory, exist_ok=True)
+        except:
+            raise Exception("Unable to find or create output directory.")
 
     def prepare_checkpoint_directory(self):
         # Catalogue any checkpoint directories already in the output_directory
@@ -96,16 +101,17 @@ class AtomicDirectory:
                 # The index of the latest checkpoint
                 latest_index = int(latest_path.split(self.chk_dir_prefix)[1])
             # Obsolete checkpoint directories
-            if self.cleanup:
+            if self.keep_last:
                 # All but the latest path
                 obsolete = [
-                    path for path in checkpoint_paths if path != latest_path
+                    # path for path in checkpoint_paths if path != latest_path
+                    d for d, i in zip(checkpoint_paths, checkpoint_indices)
+                    if i < latest_index - self.keep_last + 2 or i > latest_index
                 ]
             else:
-                # Any with index greater than the latest path index
+                # Any with index greater than the latest path index - presumably partial
                 obsolete = [
-                    d
-                    for d, i in zip(checkpoint_paths, checkpoint_indices)
+                    d for d, i in zip(checkpoint_paths, checkpoint_indices)
                     if i > latest_index
                 ]
             # Delete obsolete
