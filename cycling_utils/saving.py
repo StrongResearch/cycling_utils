@@ -57,11 +57,13 @@ class AtomicDirectory:
     def __init__(
         self,
         output_directory,
+        is_master=False,
         symlink_name="latest_pt",
         chk_dir_prefix="CHK",
         keep_last=5,
     ):
         self.output_directory = output_directory
+        self.is_master = is_master
         self.symlink_name = symlink_name
         self.chk_dir_prefix = chk_dir_prefix
         self.keep_last = keep_last
@@ -115,10 +117,11 @@ class AtomicDirectory:
                     if i > latest_index
                 ]
             # Delete obsolete
-            for d in obsolete:
-                rmtree(d)
-            for d in obsolete:
-                assert not os.path.exists(d)
+            if self.is_master:
+                for d in obsolete:
+                    rmtree(d)
+                for d in obsolete:
+                    assert not os.path.exists(d)
             # New checkpoint_directory to save to
             next_checkpoint_directory = os.path.join(
                 self.output_directory, f"{self.chk_dir_prefix}{latest_index + 1}"
@@ -128,23 +131,25 @@ class AtomicDirectory:
                 self.output_directory, f"{self.chk_dir_prefix}0"
             )
         # Create new checkpoint_directory to save to
-        os.mkdir(next_checkpoint_directory)
-        assert (
-            os.path.isdir(next_checkpoint_directory)
-            and len(os.listdir(next_checkpoint_directory)) == 0
-        ), "ERROR: fault creating new save dir."
+        if self.is_master:
+            os.mkdir(next_checkpoint_directory)
+            assert (
+                os.path.isdir(next_checkpoint_directory)
+                and len(os.listdir(next_checkpoint_directory)) == 0
+            ), "ERROR: fault creating new save dir."
         # Return path to save to
         return next_checkpoint_directory
 
     def atomic_symlink(self, checkpoint_directory):
-        # Create a new symlink with name suffixed with temp
-        parent_dir = Path(checkpoint_directory).parent.absolute()
-        os.symlink(
-            checkpoint_directory,
-            os.path.join(parent_dir, self.symlink_name + "_temp"),
-        )
-        # Replace any existing current symlink with the new temp symlink
-        os.replace(
-            os.path.join(parent_dir, self.symlink_name + "_temp"),
-            os.path.join(parent_dir, self.symlink_name),
-        )
+        if self.is_master:
+            # Create a new symlink with name suffixed with temp
+            parent_dir = Path(checkpoint_directory).parent.absolute()
+            os.symlink(
+                checkpoint_directory,
+                os.path.join(parent_dir, self.symlink_name + "_temp"),
+            )
+            # Replace any existing current symlink with the new temp symlink
+            os.replace(
+                os.path.join(parent_dir, self.symlink_name + "_temp"),
+                os.path.join(parent_dir, self.symlink_name),
+            )
