@@ -115,11 +115,10 @@ class AtomicDirectory:
                     if i > latest_index
                 ]
             # Delete obsolete
-            if int(os.environ["RANK"]) == 0:
-                for d in obsolete:
-                    rmtree(d)
-                for d in obsolete:
-                    assert not os.path.exists(d)
+            for d in obsolete:
+                rmtree(d)
+            for d in obsolete:
+                assert not os.path.exists(d)
             # New checkpoint_directory to save to
             next_checkpoint_directory = os.path.join(
                 self.output_directory, f"{self.chk_dir_prefix}{latest_index + 1}"
@@ -129,25 +128,23 @@ class AtomicDirectory:
                 self.output_directory, f"{self.chk_dir_prefix}0"
             )
         # Create new checkpoint_directory to save to
-        if int(os.environ["RANK"]) == 0:
-            os.mkdir(next_checkpoint_directory)
-            assert (
-                os.path.isdir(next_checkpoint_directory)
-                and len(os.listdir(next_checkpoint_directory)) == 0
-            ), "ERROR: fault creating new save dir."
+        os.mkdir(next_checkpoint_directory)
+        assert (
+            os.path.isdir(next_checkpoint_directory)
+            and len(os.listdir(next_checkpoint_directory)) == 0
+        ), "ERROR: fault creating new save dir."
         # Return path to save to
         return next_checkpoint_directory
 
     def atomic_symlink(self, checkpoint_directory):
-        if int(os.environ["RANK"]) == 0:
-            # Create a new symlink with name suffixed with temp
-            parent_dir = Path(checkpoint_directory).parent.absolute()
-            os.symlink(
-                checkpoint_directory,
-                os.path.join(parent_dir, self.symlink_name + "_temp"),
-            )
-            # Replace any existing current symlink with the new temp symlink
-            os.replace(
-                os.path.join(parent_dir, self.symlink_name + "_temp"),
-                os.path.join(parent_dir, self.symlink_name),
-            )
+        # Create a new symlink with name suffixed with temp
+        parent_dir = Path(checkpoint_directory).parent.absolute()
+        os.symlink(
+            checkpoint_directory,
+            os.path.join(parent_dir, self.symlink_name + "_temp"),
+        )
+        # Replace any existing current symlink with the new temp symlink
+        os.replace(
+            os.path.join(parent_dir, self.symlink_name + "_temp"),
+            os.path.join(parent_dir, self.symlink_name),
+        )
