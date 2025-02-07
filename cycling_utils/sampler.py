@@ -48,7 +48,33 @@ class InterruptableDistributedSampler(DistributedSampler):
         self.progress = 0
         self._has_reset_progress = True
 
-    def _reset_progress(self):
+        if self.shuffle:
+            # deterministically shuffle based on epoch and seed
+            g = torch.Generator()
+            g.manual_seed(self.seed + self.epoch)
+            self.indices = torch.randperm(len(self.dataset), generator=g).tolist()  # type: ignore[arg-type]
+        else:
+            self.indices = list(range(len(self.dataset)))  # type: ignore[arg-type]
+
+        if not self.drop_last:
+            # add extra samples to make it evenly divisible
+            padding_size = self.total_size - len(self.indices)
+            if padding_size <= len(self.indices):
+                self.indices += self.indices[:padding_size]
+            else:
+                self.indices += (self.indices * math.ceil(padding_size / len(self.indices)))[
+                    :padding_size
+                ]
+        else:
+            # remove tail of data to make it evenly divisible.
+            self.indices = self.indices[: self.total_size]
+        assert len(self.indices) == self.total_size
+
+        # subsample
+        self.indices = self.indices[self.rank : self.total_size : self.num_replicas]
+        assert len(self.indices) == self.num_samples
+
+    def reset_progress(self):
         self.progress = 0
         self._has_reset_progress = True
 
@@ -75,41 +101,14 @@ class InterruptableDistributedSampler(DistributedSampler):
         Record that n samples have been consumed.
         """
         self.progress += n
+        self._has_reset_progress = False
         if self.progress > self.num_samples:
             raise AdvancedTooFarError(
                 "You have advanced too far. You can only advance up to the total size of the dataset."
             )
 
     def __iter__(self):
-        if self.shuffle:
-            # deterministically shuffle based on epoch and seed
-            g = torch.Generator()
-            g.manual_seed(self.seed + self.epoch)
-            indices = torch.randperm(len(self.dataset), generator=g).tolist()  # type: ignore[arg-type]
-        else:
-            indices = list(range(len(self.dataset)))  # type: ignore[arg-type]
-
-        if not self.drop_last:
-            # add extra samples to make it evenly divisible
-            padding_size = self.total_size - len(indices)
-            if padding_size <= len(indices):
-                indices += indices[:padding_size]
-            else:
-                indices += (indices * math.ceil(padding_size / len(indices)))[
-                    :padding_size
-                ]
-        else:
-            # remove tail of data to make it evenly divisible.
-            indices = indices[: self.total_size]
-        assert len(indices) == self.total_size
-
-        # subsample
-        indices = indices[self.rank : self.total_size : self.num_replicas]
-        assert len(indices) == self.num_samples
-
-        # slice from progress to pick up where we left off
-
-        for idx in indices[self.progress :]:
+        for idx in self.indices[self.progress :]:
             yield idx
 
     @contextmanager
@@ -126,7 +125,7 @@ class InterruptableDistributedSampler(DistributedSampler):
         """
         self.set_epoch(epoch)
         yield
-        self._reset_progress()
+        self.reset_progress()
 
 
 class InterruptableDistributedGroupedBatchSampler(DistributedSampler):
