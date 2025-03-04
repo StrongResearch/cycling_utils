@@ -1,16 +1,14 @@
 import os, re
 from pathlib import Path
 from shutil import rmtree
-
 import torch
-
+from torch.distributed import barrier
 
 def atomic_torch_save(obj, f: str | Path, **kwargs):
     f = str(f)
     temp_f = f + ".temp"
     torch.save(obj, temp_f, **kwargs)
     os.replace(temp_f, f)
-
 
 class AtomicDirectory:
     """
@@ -53,7 +51,20 @@ class AtomicDirectory:
     >>>         # Updating symlink to direct to the latest checkpoint
     >>>         saver.atomic_symlink(checkpoint_directory)
 
-    If keep_last < 0 (e.g. -1) this disables self-cleanup. Set keep_last = -1 when relying on ISC to sync checkpoint artifact.
+    
+    For best-endeavours checkpoint saving:
+    >>> saver = AtomicDirectory(output_directory, is_master=rank==0)
+    >>> ...loop
+    >>>     checkpoint_directory = saver.prepare_checkpoint_directory()
+    >>>     ...saving...
+    >>>     saver.atomic_symlink(checkpoint_directory)
+
+    To force-save a checkpoint for retrieval later:
+    >>> saver = AtomicDirectory(output_directory, is_master=rank==0)
+    >>> ...loop
+    >>>     checkpoint_directory = saver.prepare_checkpoint_directory(force_save=True)
+    >>>     ...saving...
+    >>>     saver.atomic_symlink(checkpoint_directory)
     """
 
     def __init__(
@@ -61,6 +72,7 @@ class AtomicDirectory:
         output_directory,
         is_master = False,
         name = "AtomicDirectory",
+
         keep_last = -1,
     ):
         self.output_directory = output_directory
@@ -83,11 +95,11 @@ class AtomicDirectory:
         else:
             return None
 
-    def prepare_checkpoint_directory(self, save_historic=False):
+    def prepare_checkpoint_directory(self, force_save=False):
 
         output_directory_contents = os.listdir(self.output_directory)
-        checkpoint_suffixes = [self.is_checkpoint_directory(path_str) for path_str in output_directory_contents]
-        checkpoint_paths = {path: suffix for path, suffix in zip(output_directory_contents, checkpoint_suffixes) if suffix}
+        maybe_checkpoint_suffixes = [self.is_checkpoint_directory(path_str) for path_str in output_directory_contents]
+        checkpoint_paths = {path: suffix for path, suffix in zip(output_directory_contents, maybe_checkpoint_suffixes) if suffix}
         
         symlink_found = self.symlink_name in output_directory_contents
 
@@ -97,17 +109,19 @@ class AtomicDirectory:
         if symlink_found and not checkpoint_paths:
             raise Exception("Found symlink but no finalized checkpoint dirs.")
 
+        latest_sequential_index = -1
+
         if symlink_found:
 
-            latest_sequential_path = os.readlink(os.path.join(self.output_directory, self.symlink_name))
-            latest_sequential_index = int(checkpoint_paths[latest_sequential_path].split("_")[0])
+            symlink_path = os.readlink(os.path.join(self.output_directory, self.symlink_name))
 
-            # delete any deletable checkpoint directories
+            latest_sequential_index = int(checkpoint_paths[symlink_path].split("_")[0])
+
+            # determine directories that can be deleted
             if self.keep_last > 0:
                 deletable = [
                     path for path,suffix in checkpoint_paths.items()
-                    if path != latest_sequential_path 
-                    and not suffix.endswith("_s")
+                    if not suffix.endswith("_force")
                     and (
                         int(suffix.split("_")[0]) < latest_sequential_index - self.keep_last + 2 
                         or int(suffix.split("_")[0]) > latest_sequential_index
@@ -116,25 +130,22 @@ class AtomicDirectory:
             else:
                 deletable = [
                     path for path, suffix in checkpoint_paths.items()
-                    if int(suffix.split("_")[0]) > latest_sequential_index
+                    if not suffix.endswith("_force")
+                    and int(suffix.split("_")[0]) > latest_sequential_index
                 ]
 
             # Delete deletable
+            barrier()
             if self.is_master:
                 for path in deletable:
                     rmtree(path)
                 for path in deletable:
                     assert not Path(path).exists()
 
-            # create the next checkpoint directory
-            next_checkpoint_name = f"{self.name}.checkpoint_{latest_sequential_index + 1}"
-            if save_historic:
-                next_checkpoint_name += "_s"
-
-        else:
-            next_checkpoint_name = f"{self.name}.checkpoint_0"
-            if save_historic:
-                next_checkpoint_name += "_s"
+        # create the next checkpoint directory
+        next_checkpoint_name = f"{self.name}_checkpoint_{latest_sequential_index + 1}"
+        if force_save:
+            next_checkpoint_name += "_force"
 
         # Create new checkpoint_directory to save to
         next_checkpoint_directory = os.path.join(self.output_directory, next_checkpoint_name)
@@ -146,6 +157,7 @@ class AtomicDirectory:
             ), "ERROR: fault creating new save dir."
 
         # Return path to save to
+        barrier()
         return next_checkpoint_directory
 
     def symlink_latest(self, checkpoint_directory):
