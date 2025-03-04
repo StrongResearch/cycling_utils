@@ -87,7 +87,7 @@ class AtomicDirectory:
             raise Exception("Unable to find or create output directory.")
         
     def is_checkpoint_directory(path_str):
-        pattern = r"checkpoint_(\d+(_s)?)$"
+        pattern = r"_checkpoint_(\d+(_s)?)$"
         path = Path(path_str)
         match = re.match(pattern, path.name)
         if path.exists() and path.is_dir() and match:
