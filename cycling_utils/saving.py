@@ -100,11 +100,10 @@ class AtomicDirectory:
         output_directory_contents = os.listdir(self.output_directory)
         maybe_checkpoint_suffixes = [self.is_checkpoint_directory(path_str) for path_str in output_directory_contents]
         checkpoint_paths = {path: suffix for path, suffix in zip(output_directory_contents, maybe_checkpoint_suffixes) if suffix}
-        
         symlink_found = self.symlink_name in output_directory_contents
 
         if checkpoint_paths and not symlink_found:
-            raise Exception("Found finalized checkpoint dirs but no symlink to latest.")
+            print("Found one or more checkpoint dirs but no symlink to latest. Will assume all to be deleted.")
 
         if symlink_found and not checkpoint_paths:
             raise Exception("Found symlink but no finalized checkpoint dirs.")
