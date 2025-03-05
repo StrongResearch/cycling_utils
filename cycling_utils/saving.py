@@ -86,27 +86,30 @@ class AtomicDirectory:
         except:
             raise Exception("Unable to find or create output directory.")
         
-    def is_checkpoint_directory(path_str):
-        pattern = r"_checkpoint_(\d+(_s)?)$"
+    def is_checkpoint_directory(self, path_str):
+        pattern = r'checkpoint_(\d+)(_force)?$'
         path = Path(path_str)
-        match = re.match(pattern, path.name)
-        if path.exists() and path.is_dir() and match:
-            return match.group(1)
+        match = re.search(pattern, path.name)
+        if path.exists() and path.is_dir() and path.name.startswith(f"{self.name}_checkpoint") and match:
+            # Combine the matched groups to form the suffix
+            suffix = match.group(1)  # This captures the integer part
+            if match.group(2):  # This captures "_force" if it exists
+                suffix += match.group(2)
+            return suffix
         else:
             return None
 
     def prepare_checkpoint_directory(self, force_save=False):
-
         output_directory_contents = os.listdir(self.output_directory)
-        maybe_checkpoint_suffixes = [self.is_checkpoint_directory(path_str) for path_str in output_directory_contents]
+        maybe_checkpoint_suffixes = [self.is_checkpoint_directory(os.path.join(self.output_directory, path_str)) for path_str in output_directory_contents]
         checkpoint_paths = {path: suffix for path, suffix in zip(output_directory_contents, maybe_checkpoint_suffixes) if suffix}
         symlink_found = self.symlink_name in output_directory_contents
 
         if checkpoint_paths and not symlink_found:
-            print("Found one or more checkpoint dirs but no symlink to latest. Will assume all to be deleted.")
+            print("Found one or more checkpoint dirs but no symlink to latest. Will assume all should be deleted.")
 
         if symlink_found and not checkpoint_paths:
-            raise Exception("Found symlink but no finalized checkpoint dirs.")
+            raise Exception(f"Found symlink but no finalized checkpoint dirs: {checkpoint_paths}, {output_directory_contents}")
 
         latest_sequential_index = -1
 
@@ -114,12 +117,12 @@ class AtomicDirectory:
 
             symlink_path = os.readlink(os.path.join(self.output_directory, self.symlink_name))
 
-            latest_sequential_index = int(checkpoint_paths[symlink_path].split("_")[0])
+            latest_sequential_index = int(checkpoint_paths[Path(symlink_path).name].split("_")[0])
 
             # determine directories that can be deleted
             if self.keep_last > 0:
                 deletable = [
-                    path for path,suffix in checkpoint_paths.items()
+                    os.path.join(self.output_directory, path) for path,suffix in checkpoint_paths.items()
                     if not suffix.endswith("_force")
                     and (
                         int(suffix.split("_")[0]) < latest_sequential_index - self.keep_last + 2 
@@ -128,7 +131,7 @@ class AtomicDirectory:
                 ]
             else:
                 deletable = [
-                    path for path, suffix in checkpoint_paths.items()
+                    os.path.join(self.output_directory, path) for path, suffix in checkpoint_paths.items()
                     if not suffix.endswith("_force")
                     and int(suffix.split("_")[0]) > latest_sequential_index
                 ]
@@ -150,10 +153,9 @@ class AtomicDirectory:
         next_checkpoint_directory = os.path.join(self.output_directory, next_checkpoint_name)
         if self.is_master:
             os.makedirs(next_checkpoint_directory, exist_ok=True)
-            assert (
-                Path(next_checkpoint_directory).exists() and Path(next_checkpoint_directory).is_dir()
-                and len(os.listdir(next_checkpoint_directory)) == 0
-            ), "ERROR: fault creating new save dir."
+            assert Path(next_checkpoint_directory).exists(), "ERROR: Just made directory but does not exist."
+            assert Path(next_checkpoint_directory).is_dir(), "ERROR: Path just created is not a directory."
+            assert len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: Next checkpoint directory already populated."
 
         # Return path to save to
         barrier()
