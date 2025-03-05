@@ -116,7 +116,6 @@ class AtomicDirectory:
         if symlink_found:
 
             symlink_path = os.readlink(os.path.join(self.output_directory, self.symlink_name))
-
             latest_sequential_index = int(checkpoint_paths[Path(symlink_path).name].split("_")[0])
 
             # determine directories that can be deleted
@@ -156,6 +155,8 @@ class AtomicDirectory:
             assert Path(next_checkpoint_directory).exists(), "ERROR: Just made directory but does not exist."
             assert Path(next_checkpoint_directory).is_dir(), "ERROR: Path just created is not a directory."
             assert len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: Next checkpoint directory already populated."
+            if force_save:
+                assert Path(next_checkpoint_directory).name.endswith("_force"), "ERROR: Force path missing force tag."
 
         # Return path to save to
         barrier()
