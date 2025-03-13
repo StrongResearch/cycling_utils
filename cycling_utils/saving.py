@@ -49,7 +49,7 @@ class AtomicDirectory:
     >>>         ...
 
     >>>         # Updating symlink to direct to the latest checkpoint
-    >>>         saver.atomic_symlink(checkpoint_directory)
+    >>>         saver.symlink_latest(checkpoint_directory)
 
     
     For best-endeavours checkpoint saving:
@@ -57,14 +57,14 @@ class AtomicDirectory:
     >>> ...loop
     >>>     checkpoint_directory = saver.prepare_checkpoint_directory()
     >>>     ...saving...
-    >>>     saver.atomic_symlink(checkpoint_directory)
+    >>>     saver.symlink_latest(checkpoint_directory)
 
     To force-save a checkpoint for retrieval later:
     >>> saver = AtomicDirectory(output_directory, is_master=rank==0)
     >>> ...loop
     >>>     checkpoint_directory = saver.prepare_checkpoint_directory(force_save=True)
     >>>     ...saving...
-    >>>     saver.atomic_symlink(checkpoint_directory)
+    >>>     saver.symlink_latest(checkpoint_directory)
     """
 
     def __init__(
