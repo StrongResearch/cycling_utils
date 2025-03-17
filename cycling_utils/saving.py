@@ -12,10 +12,7 @@ def atomic_torch_save(obj, f: str | Path, **kwargs):
 
 class AtomicDirectory:
     """
-    This is an extension on the concept of atomic saving to support saving to directories, which is useful where it is
-    necessary to use a specific saving technology that is not easily adapted to the dictionary-based torch save pattern.
-
-    This works by preparing and saving to a new directory each checkpoint, and then saving a symlink to that directory
+    The AtomicDirectory saver works by saving each checkpoint to a new directory, and then saving a symlink to that directory
     which should be read upon resume to obtain the path to the latest checkpoint directory.
 
     The AtomicDirectory accepts the following arguments at initialization:

@@ -28,6 +28,7 @@ if resume_from_checkpoint:
 
 # use in your train script
 for batch in loader:
+
   # advance by your batch size each epoch
   # batch_size = ...
   sampler.advance(batch_size)
@@ -61,7 +62,7 @@ loader = DataLoader(dataset, sampler=sampler)
 
 ### atomic saving
 
-If a process writing to a checkpoint (eg `latest.pt`) is interrupted, it can corrupt the file. If you try and resume from a corrupted checkpoint, this is going to fail your job, and you are going to have to go back to an earlier checkpoint, wasting time. To remedy this, you need to save in an atomic way - only making making sure the file is written if it suceeds. For this, we provide a drop in replacement for `torch.save`:
+If a process writing to a checkpoint (eg `latest.pt`) is interrupted, it can corrupt the file. If you try and resume from a corrupted checkpoint, this is going to fail your job, and you are going to have to go back to an earlier checkpoint, wasting time. To remedy this, you need to save in an atomic way - making sure the checkpoint saves completely or not at all. For this, we provide a drop in replacement for `torch.save`:
 ```
 from cycling_utils import atomic_torch_save
 
@@ -73,34 +74,66 @@ optimizer = ...
 atomic_torch_save({
   "model":model.state_dict(),
   "optimizer":optimizer.state_dict()
-})
+}, checkpoint_output_path)
 ```
-Alternatively it is often necessary to save multiple files which together make up your checkpoint, so that the checkpoint is not easily packaged as a dictionary object above. For this we have developed the AtomicDirectory saver which can be used to save checkpoints to successive directories, potentially removing redundant checkpoint directories as you go, in a way which is atomic.
+
+The Strong Compute ISC uses an Artifacts system for saving experiment outputs. Saving Checkpoint type Artifacts requires using the AtomicDirectory saver. The User is responsible for implementing AtomicDirectory saver and saving checkpoints at their desired frequency.
+
+The AtomicDirectory saver works by saving each checkpoint to a new directory, and then saving a symlink to that directory
+which should be read upon resume to obtain the path to the latest checkpoint directory.
+
+Checkpoint Artifacts saved to $CHECKPOINT_ARTIFACT_PATH are synchronized every 10 minutes and/or at the end of each cycle on Strong Compute. Upon synchronization, the latest symlinked checkpoint/s saved by AtomicDirectory saver/s in the $CHECKPOINT_ARTIFACT_PATH directory will be shipped to Checkpoint Artifacts for the experiment. Any non-latest checkpoints saved since the previous Checkpoint Artifact sychronization will be deleted and not shipped.
+
+The user can force non-latest checkpoints to also ship to Checkpoint Artifacts by calling `prepare_checkpoint_directory` with `force_save = True`. This can be used, for example:
+- to ensure every Nth saved checkpoint is archived for later analysis, or 
+- to ensure that checkpoints are saved each time model performance improves. 
+
+The AtomicDirectory accepts the following arguments at initialization:
+
+- output_directory: root directory for all ouputs from the experiment, (e.g. where the rank logs are saved).
+- is_master: a boolean to indicate whether the process running the AtomicDirectory saver is the master rank in the process group.
+- name: a name for the AtomicDirectory saver. If the user is running multiple savers in parallel, each should be given a unique name.
+- keep_last: the number of previous checkpoints to retain locally, should always be -1 when saving Checkpoint Artifacts to the $CHECKPOINT_ARTIFACT_PATH on the Strong Compute.
+
+Example usage of AtomicDirectory on the Strong Compute ISC launching with torchrun as follows.
+
 ```
-# Import
-from cycling_utils import AtomicDirectory
-saver = AtomicDirectory(output_directory)
+import os 
+import torch
+import torch.distributed as dist
+from cycling_utils import AtomicDirectory, atomic_torch_save
 
-# Resume
-latest_sym = os.path.join(output_directory, saver.symlink_name)
-if os.path.exists(latest_sym):
-  latest_path = os.readlink(latest_sym)
-  # Load files from latest_path
-  ...
+dist.init_process_group("nccl")
+rank = int(os.environ["RANK"]) 
+output_directory = os.environ["CHECKPOINT_ARTIFACT_PATH"]
 
-# Train
-for epoch in epochs:
-  for batch in batches:
+# Initialize the AtomicDirectory
+saver = AtomicDirectory(output_directory, is_master=rank==0)
 
-    # Prepare the checkpoint directory before starting iteration
-    checkpoint_directory = saver.prepare_checkpoint_directory()
+# Resume from checkpoint
+latest_symlink_file_path = os.path.join(output_directory, saver.symlink_name)
+if os.path.exists(latest_symlink_file_path):
+   latest_checkpoint_path = os.readlink(latest_symlink_file_path)
 
-    # Saving files to the checkpoint_directory
-    torch.save(obj, checkpoint_directory)
+    # Load files from latest_checkpoint_path
+    checkpoint_path = os.path.join(latest_checkpoint_path, "checkpoint.pt")
+    checkpoint = torch.load(checkpoint_path)
     ...
 
-    # Finalzing checkpoint directory
-    saver.atomic_symlink(checkpoint_directory)
-```
+for epoch in epochs:
+    for batch in batches:
 
+        ...training...
+
+        if is_save_step:
+            checkpoint_directory = saver.prepare_checkpoint_directory()
+
+            # saving files to the checkpoint_directory
+            checkpoint = {...}
+            checkpoint_path = os.path.join(checkpoint_directory, "checkpoint.pt")
+            atomic_torch_save(checkpoint, checkpoint_path)
+
+            # finalizing checkpoint with symlink
+            saver.symlink_latest(checkpoint_directory)
+```
 
