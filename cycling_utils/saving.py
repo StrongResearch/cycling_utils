@@ -108,6 +108,7 @@ class AtomicDirectory:
             return None
 
     def prepare_checkpoint_directory(self, force_save=False):
+        barrier()
         output_directory_contents = os.listdir(self.output_directory)
         maybe_checkpoint_suffixes = [self.is_checkpoint_directory(os.path.join(self.output_directory, path_str)) for path_str in output_directory_contents]
         checkpoint_paths = {path: suffix for path, suffix in zip(output_directory_contents, maybe_checkpoint_suffixes) if suffix}
