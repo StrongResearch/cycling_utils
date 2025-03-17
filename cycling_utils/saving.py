@@ -17,9 +17,9 @@ class AtomicDirectory:
 
     The AtomicDirectory accepts the following arguments at initialization:
 
-    - output_directory: root directory for all ouputs from the experiment, (e.g. where the rank logs are saved).
+    - output_directory: root directory for all ouputs from the experiment, should always be set to the $CHECKPOINT_ARTIFACT_PATH environment variable when training on the Strong Compute ISC.
     - is_master: a boolean to indicate whether the process running the AtomicDirectory saver is the master rank in the process group.
-    - name: a name for the AtomicDirectory saver. If the user is running multiple savers in parallel, each should be given a unique name.
+    - name: a name for the AtomicDirectory saver. If the user is running multiple savers in parallel, each must be given a unique name.
     - keep_last: the number of previous checkpoints to retain on disk, should always be -1 when saving Checkpoint Artifacts on Strong Compute.
 
     Example usage of AtomicDirectory on Strong Compute launching with torchrun as follows.
