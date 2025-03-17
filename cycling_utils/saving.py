@@ -18,53 +18,65 @@ class AtomicDirectory:
     This works by preparing and saving to a new directory each checkpoint, and then saving a symlink to that directory
     which should be read upon resume to obtain the path to the latest checkpoint directory.
 
-    The AtomicDirectory accepts the following arguments:
-        output_directory: root directory for all ouputs from the experiment, (e.g. where the rank logs are saved).
-        symlink_name: filename given to the symlink used to designate the latest checkpoint directory.
-        chk_dir_prefix: prefix given to the checkpoint directories, used to identify them as checkpoint directories.
-        cleanup: whether to delete old checkpoint directories and their contents.
+    The AtomicDirectory accepts the following arguments at initialization:
 
-    Example usage (saving every training batch) is as follows. Note that saver.prepare_checkpoint_directory() is run
-    at the start of the iteration in which a checkpoint is saved. This is to ensure that the clean-up step is
-    prioritised and that subsequent work is not lost.
+    - output_directory: root directory for all ouputs from the experiment, (e.g. where the rank logs are saved).
+    - is_master: a boolean to indicate whether the process running the AtomicDirectory saver is the master rank in the process group.
+    - name: a name for the AtomicDirectory saver. If the user is running multiple savers in parallel, each should be given a unique name.
+    - keep_last: the number of previous checkpoints to retain on disk, should always be -1 when saving Checkpoint Artifacts on Strong Compute.
+
+    Example usage of AtomicDirectory on Strong Compute launching with torchrun as follows.
+
+    >>> import os 
+    >>> import torch
+    >>> import torch.distributed as dist
+    >>> from cycling_utils import AtomicDirectory, atomic_torch_save
+    
+    >>> dist.init_process_group("nccl")
+    >>> rank = int(os.environ["RANK"]) 
+    >>> output_directory = os.environ["CHECKPOINT_ARTIFACT_PATH"]
 
     >>> # Initialize the AtomicDirectory
-    >>> saver = AtomicDirectory(output_directory)
+    >>> saver = AtomicDirectory(output_directory, is_master=rank==0)
 
     >>> # Resume from checkpoint
-    >>> latest_sym = os.path.join(output_directory, saver.symlink_name)
-    >>> if os.path.exists(latest_sym):
-    >>>    latest_path = os.readlink(latest_sym)
+    >>> latest_symlink_file_path = os.path.join(output_directory, saver.symlink_name)
+    >>> if os.path.exists(latest_symlink_file_path):
+    >>>    latest_checkpoint_path = os.readlink(latest_symlink_file_path)
 
-    >>>     # Load files from latest_path
+    >>>     # Load files from latest_checkpoint_path
+    >>>     checkpoint_path = os.path.join(latest_checkpoint_path, "checkpoint.pt")
+    >>>     checkpoint = torch.load(checkpoint_path)
     >>>     ...
 
     >>> for epoch in epochs:
     >>>     for batch in batches:
 
-    >>>         # Prepare the checkpoint directory before starting computation for the iteration
-    >>>         checkpoint_directory = saver.prepare_checkpoint_directory()
+    >>>         ...training...
 
-    >>>         # Saving files to the checkpoint_directory
-    >>>         ...
+    >>>         if is_save_step:
+    >>>             checkpoint_directory = saver.prepare_checkpoint_directory()
 
-    >>>         # Updating symlink to direct to the latest checkpoint
-    >>>         saver.symlink_latest(checkpoint_directory)
+    >>>             # saving files to the checkpoint_directory
+    >>>             checkpoint = {...}
+    >>>             checkpoint_path = os.path.join(checkpoint_directory, "checkpoint.pt")
+    >>>             atomic_torch_save(checkpoint, checkpoint_path)
 
-    
-    For best-endeavours checkpoint saving:
-    >>> saver = AtomicDirectory(output_directory, is_master=rank==0)
-    >>> ...loop
-    >>>     checkpoint_directory = saver.prepare_checkpoint_directory()
-    >>>     ...saving...
-    >>>     saver.symlink_latest(checkpoint_directory)
+    >>>             # finalizing checkpoint with symlink
+    >>>             saver.symlink_latest(checkpoint_directory)
 
-    To force-save a checkpoint for retrieval later:
-    >>> saver = AtomicDirectory(output_directory, is_master=rank==0)
-    >>> ...loop
-    >>>     checkpoint_directory = saver.prepare_checkpoint_directory(force_save=True)
-    >>>     ...saving...
-    >>>     saver.symlink_latest(checkpoint_directory)
+    The AtomicDirectory saver is designed for use with Checkpoint Artifacts on Strong Compute. The User is responsible for 
+    implementing AtomicDirectory saver and saving checkpoints at their desired frequency.
+
+    Checkpoint Artifacts are synchronized every 10 minutes and/or at the end of each cycle on Strong Compute. Upon synchronization, 
+    the latest symlinked checkpoint/s saved by AtomicDirectory saver/s in the $CHECKPOINT_ARTIFACT_PATH directory will be shipped 
+    to Checkpoint Artifacts for the experiment. Any non-latest checkpoints saved since the previous Checkpoint Artifact sychronization 
+    will be deleted and not shipped.
+
+    The user can force non-latest checkpoints to also ship to Checkpoint Artifacts by calling `prepare_checkpoint_directory`
+    with `force_save = True`. This can be used, for example:
+    - to ensure every Nth saved checkpoint is archived for later analysis, or 
+    - to ensure that checkpoints are saved each time model performance improves. 
     """
 
     def __init__(
@@ -72,7 +84,6 @@ class AtomicDirectory:
         output_directory,
         is_master = False,
         name = "AtomicDirectory",
-
         keep_last = -1,
     ):
         self.output_directory = output_directory
