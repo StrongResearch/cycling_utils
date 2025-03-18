@@ -151,24 +151,25 @@ class AtomicDirectory:
                     rmtree(path)
                 for path in deletable:
                     assert not Path(path).exists()
+            barrier()
 
-        # create the next checkpoint directory
+        # name the next checkpoint directory
         next_checkpoint_name = f"{self.name}_checkpoint_{latest_sequential_index + 1}"
         if force_save:
             next_checkpoint_name += "_force"
-
-        # Create new checkpoint_directory to save to
         next_checkpoint_directory = os.path.join(self.output_directory, next_checkpoint_name)
+
+        # create the next checkpoint directory
         if self.is_master:
             os.makedirs(next_checkpoint_directory, exist_ok=True)
-            assert Path(next_checkpoint_directory).exists(), "ERROR: Just made directory but does not exist."
-            assert Path(next_checkpoint_directory).is_dir(), "ERROR: Path just created is not a directory."
-            assert len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: Next checkpoint directory already populated."
-            if force_save:
-                assert Path(next_checkpoint_directory).name.endswith("_force"), "ERROR: Force path missing force tag."
 
-        # Return path to save to
         barrier()
+        assert Path(next_checkpoint_directory).exists(), "ERROR: Just made directory but does not exist."
+        assert Path(next_checkpoint_directory).is_dir(), "ERROR: Path just created is not a directory."
+        assert len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: Next checkpoint directory already populated."
+        if force_save:
+            assert Path(next_checkpoint_directory).name.endswith("_force"), "ERROR: Force path missing force tag."
+
         return next_checkpoint_directory
 
     def symlink_latest(self, checkpoint_directory):
