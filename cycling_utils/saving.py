@@ -166,7 +166,7 @@ class AtomicDirectory:
 
         # create the next checkpoint directory
         if self.is_master:
-            os.makedirs(next_checkpoint_directory, exist_ok=False)
+            os.makedirs(next_checkpoint_directory, exist_ok=True)
 
         barrier()
         
