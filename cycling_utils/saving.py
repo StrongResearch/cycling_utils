@@ -168,6 +168,10 @@ class AtomicDirectory:
         if self.is_master:
             os.makedirs(next_checkpoint_directory, exist_ok=True)
 
+            while True:
+                if Path(next_checkpoint_directory).exists():
+                    break
+
         barrier()
         
         assert Path(next_checkpoint_directory).exists(), "ERROR: Just made directory but does not exist."
