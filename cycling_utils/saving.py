@@ -108,7 +108,9 @@ class AtomicDirectory:
             return None
 
     def prepare_checkpoint_directory(self, force_save=False):
+        
         barrier()
+        
         output_directory_contents = os.listdir(self.output_directory)
         maybe_checkpoint_suffixes = [self.is_checkpoint_directory(os.path.join(self.output_directory, path_str)) for path_str in output_directory_contents]
         checkpoint_paths = {path: suffix for path, suffix in zip(output_directory_contents, maybe_checkpoint_suffixes) if suffix}
@@ -121,6 +123,7 @@ class AtomicDirectory:
             raise Exception(f"Found symlink but no finalized checkpoint dirs: {checkpoint_paths}, {output_directory_contents}")
 
         latest_sequential_index = -1
+        deletable = []
 
         if symlink_found:
 
@@ -144,14 +147,16 @@ class AtomicDirectory:
             
             deletable = incomplete_deletable + obsolete_deletable
 
-            # Delete deletable
-            barrier()
-            if self.is_master:
-                for path in deletable:
-                    rmtree(path)
-                for path in deletable:
-                    assert not Path(path).exists()
-            barrier()
+        # Delete deletable
+        barrier()
+        
+        if self.is_master:
+            for path in deletable:
+                rmtree(path)
+            for path in deletable:
+                assert not Path(path).exists()
+                    
+        barrier()
 
         # name the next checkpoint directory
         next_checkpoint_name = f"{self.name}_checkpoint_{latest_sequential_index + 1}"
@@ -164,11 +169,13 @@ class AtomicDirectory:
             os.makedirs(next_checkpoint_directory, exist_ok=False)
 
         barrier()
+        
         assert Path(next_checkpoint_directory).exists(), "ERROR: Just made directory but does not exist."
         assert Path(next_checkpoint_directory).is_dir(), "ERROR: Path just created is not a directory."
         assert len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: Next checkpoint directory already populated."
         if force_save:
             assert Path(next_checkpoint_directory).name.endswith("_force"), "ERROR: Force path missing force tag."
+            
         barrier()
         
         return next_checkpoint_directory
