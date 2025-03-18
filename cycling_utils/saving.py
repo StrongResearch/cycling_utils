@@ -168,9 +168,9 @@ class AtomicDirectory:
         if self.is_master:
             os.makedirs(next_checkpoint_directory, exist_ok=True)
 
-            while True:
-                if Path(next_checkpoint_directory).exists():
-                    break
+        while True:
+            if Path(next_checkpoint_directory).exists():
+                break
 
         # barrier()
         
