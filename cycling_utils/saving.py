@@ -128,21 +128,21 @@ class AtomicDirectory:
             latest_sequential_index = int(checkpoint_paths[Path(symlink_path).name].split("_")[0])
 
             # determine directories that can be deleted
+            incomplete_deletable = [
+                os.path.join(self.output_directory, path) 
+                for path,suffix in checkpoint_paths.items() 
+                if int(suffix.split("_")[0]) > latest_sequential_index
+            ]
+
+            obsolete_deletable = []
             if self.keep_last > 0:
-                deletable = [
-                    os.path.join(self.output_directory, path) for path,suffix in checkpoint_paths.items()
-                    if not suffix.endswith("_force")
-                    and (
-                        int(suffix.split("_")[0]) < latest_sequential_index - self.keep_last + 2 
-                        or int(suffix.split("_")[0]) > latest_sequential_index
-                    )
+                obsolete_deletable = [
+                    os.path.join(self.output_directory, path) 
+                    for path,suffix in checkpoint_paths.items() 
+                    if not suffix.endswith("_force") and int(suffix.split("_")[0]) < latest_sequential_index - self.keep_last + 2
                 ]
-            else:
-                deletable = [
-                    os.path.join(self.output_directory, path) for path, suffix in checkpoint_paths.items()
-                    if not suffix.endswith("_force")
-                    and int(suffix.split("_")[0]) > latest_sequential_index
-                ]
+            
+            deletable = incomplete_deletable + obsolete_deletable
 
             # Delete deletable
             barrier()
@@ -161,7 +161,7 @@ class AtomicDirectory:
 
         # create the next checkpoint directory
         if self.is_master:
-            os.makedirs(next_checkpoint_directory, exist_ok=True)
+            os.makedirs(next_checkpoint_directory, exist_ok=False)
 
         barrier()
         assert Path(next_checkpoint_directory).exists(), "ERROR: Just made directory but does not exist."
