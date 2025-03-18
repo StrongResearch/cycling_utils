@@ -57,9 +57,10 @@ class AtomicDirectory:
     >>>             checkpoint_directory = saver.prepare_checkpoint_directory()
 
     >>>             # saving files to the checkpoint_directory
-    >>>             checkpoint = {...}
-    >>>             checkpoint_path = os.path.join(checkpoint_directory, "checkpoint.pt")
-    >>>             atomic_torch_save(checkpoint, checkpoint_path)
+    >>>             if is_master_rank:
+    >>>                 checkpoint = {...}
+    >>>                 checkpoint_path = os.path.join(checkpoint_directory, "checkpoint.pt")
+    >>>                 atomic_torch_save(checkpoint, checkpoint_path)
 
     >>>             # finalizing checkpoint with symlink
     >>>             saver.symlink_latest(checkpoint_directory)
