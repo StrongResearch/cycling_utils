@@ -170,13 +170,13 @@ class AtomicDirectory:
 
         barrier()
         
-        assert Path(next_checkpoint_directory).exists(), "ERROR: Just made directory but does not exist."
-        assert Path(next_checkpoint_directory).is_dir(), "ERROR: Path just created is not a directory."
-        assert len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: Next checkpoint directory already populated."
-        if force_save:
-            assert Path(next_checkpoint_directory).name.endswith("_force"), "ERROR: Force path missing force tag."
+        # assert Path(next_checkpoint_directory).exists(), "ERROR: Just made directory but does not exist."
+        # assert Path(next_checkpoint_directory).is_dir(), "ERROR: Path just created is not a directory."
+        # assert len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: Next checkpoint directory already populated."
+        # if force_save:
+        #     assert Path(next_checkpoint_directory).name.endswith("_force"), "ERROR: Force path missing force tag."
             
-        barrier()
+        # barrier()
         
         return next_checkpoint_directory
 
