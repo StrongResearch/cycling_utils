@@ -169,7 +169,8 @@ class AtomicDirectory:
         assert len(os.listdir(next_checkpoint_directory)) == 0, "ERROR: Next checkpoint directory already populated."
         if force_save:
             assert Path(next_checkpoint_directory).name.endswith("_force"), "ERROR: Force path missing force tag."
-
+        barrier()
+        
         return next_checkpoint_directory
 
     def symlink_latest(self, checkpoint_directory):
