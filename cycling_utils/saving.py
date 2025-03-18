@@ -12,12 +12,13 @@ def atomic_torch_save(obj, f: str | Path, **kwargs):
 
 class AtomicDirectory:
     """
-    The AtomicDirectory saver works by saving each checkpoint to a new directory, and then saving a symlink to that directory
-    which should be read upon resume to obtain the path to the latest checkpoint directory.
+     The AtomicDirectory saver works by saving each checkpoint to a new directory, then saving a symlink to that directory 
+     indicating it is the most recent checkpoint. The symlink can be read upon resume to obtain the path to the latest 
+     checkpoint directory.
 
     The AtomicDirectory accepts the following arguments at initialization:
 
-    - output_directory: root directory for all ouputs from the experiment, should always be set to the $CHECKPOINT_ARTIFACT_PATH environment variable when training on the Strong Compute ISC.
+    - output_directory: root directory for all Checkpoint outputs from the experiment; should always be set to the $CHECKPOINT_ARTIFACT_PATH environment variable when training on the Strong Compute ISC.
     - is_master: a boolean to indicate whether the process running the AtomicDirectory saver is the master rank in the process group.
     - name: a name for the AtomicDirectory saver. If the user is running multiple savers in parallel, each must be given a unique name.
     - keep_last: the number of previous checkpoints to retain on disk, should always be -1 when saving Checkpoint Artifacts on Strong Compute.
@@ -47,11 +48,12 @@ class AtomicDirectory:
     >>>     ...
 
     >>> for epoch in epochs:
-    >>>     for batch in batches:
+    >>>     for step, batch in enumerate(batches):
 
     >>>         ...training...
 
     >>>         if is_save_step:
+    >>>             # prepare the checkpoint directory
     >>>             checkpoint_directory = saver.prepare_checkpoint_directory()
 
     >>>             # saving files to the checkpoint_directory
@@ -65,7 +67,7 @@ class AtomicDirectory:
     The AtomicDirectory saver is designed for use with Checkpoint Artifacts on Strong Compute. The User is responsible for 
     implementing AtomicDirectory saver and saving checkpoints at their desired frequency.
 
-    Checkpoint Artifacts are synchronized every 10 minutes and/or at the end of each cycle on Strong Compute. Upon synchronization, 
+    Checkpoint Artifacts are synchronized every 10 minutes and/or at the end of each cycle on the Strong Compute ISC. Upon synchronization, 
     the latest symlinked checkpoint/s saved by AtomicDirectory saver/s in the $CHECKPOINT_ARTIFACT_PATH directory will be shipped 
     to Checkpoint Artifacts for the experiment. Any non-latest checkpoints saved since the previous Checkpoint Artifact sychronization 
     will be deleted and not shipped.
