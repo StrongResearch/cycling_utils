@@ -181,7 +181,9 @@ class AtomicDirectory:
         return next_checkpoint_directory
 
     def symlink_latest(self, checkpoint_directory):
+        
         barrier()
+        
         if self.is_master:
             # Create a new symlink with name suffixed with temp
             parent_dir = Path(checkpoint_directory).parent.absolute()
@@ -194,3 +196,5 @@ class AtomicDirectory:
                 os.path.join(parent_dir, self.symlink_name + "_temp"),
                 os.path.join(parent_dir, self.symlink_name),
             )
+
+        barrier()
