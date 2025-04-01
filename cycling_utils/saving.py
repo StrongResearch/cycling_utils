@@ -1,4 +1,5 @@
-import os, re
+import os
+import re
 from pathlib import Path
 from shutil import rmtree
 import torch
@@ -94,8 +95,9 @@ class AtomicDirectory:
 
         try:
             os.makedirs(output_directory, exist_ok=True)
-        except:
-            raise Exception("Unable to find or create output directory.")
+        except Exception as e:
+            print(f"{type(e).__name__} at line {e.__traceback__.tb_lineno} of {__file__}: {e}")
+            raise e
         
     def is_checkpoint_directory(self, path_str):
         pattern = r'checkpoint_(\d+)(_force)?$'

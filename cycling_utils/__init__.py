@@ -9,7 +9,8 @@ from .timing import TimestampedTimer
 __all__ = [
     "InterruptableDistributedSampler",
     "InterruptableDistributedGroupedBatchSampler",
-    "InterruptableSampler"
+    "InterruptableSampler",
+    "DistributedShardedDataset",
     "atomic_torch_save",
     "AtomicDirectory",
     "MetricsTracker",
