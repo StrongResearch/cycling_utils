@@ -90,4 +90,3 @@ class MetricsTracker:
         self.agg = state_dict["agg"]
         self.reset_local()
         return self
-        

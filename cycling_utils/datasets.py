@@ -4,25 +4,37 @@ import torch
 from itertools import cycle
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from torchvision.datasets.folder import make_dataset, find_classes, pil_loader
-    
-IMG_EXTENSIONS = (".jpg", ".jpeg", ".png", ".ppm", ".bmp", ".pgm", ".tif", ".tiff", ".webp")
+
+IMG_EXTENSIONS = (
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".ppm",
+    ".bmp",
+    ".pgm",
+    ".tif",
+    ".tiff",
+    ".webp",
+)
+
 
 class DistributedShardedDataset:
     """
-    This 'DistributedShardedDataset' dataset class is based on the ImageFolder dataset class by pytorch, and is designed 
-    to enable instantiation of a unique dataset for each GPU with a (potentially overlapping) shard of the underlying 
+    This 'DistributedShardedDataset' dataset class is based on the ImageFolder dataset class by pytorch, and is designed
+    to enable instantiation of a unique dataset for each GPU with a (potentially overlapping) shard of the underlying
     dataset.
 
-    The data is first loaded into RAM as lists of samples and corresponding targets optionally transformed according to 
+    The data is first loaded into RAM as lists of samples and corresponding targets optionally transformed according to
     the 'sample_load_transform' and 'target_load_transform' callables.
 
     If the 'device_id' is not None, then the samples and targets are separately concatenated into contiguous tensors
-    and moved onto the device. Note that in order to achieve this, the samples must first be transformed to be all the 
+    and moved onto the device. Note that in order to achieve this, the samples must first be transformed to be all the
     same shape tensors.
 
     This dataset class is intended for use with the 'InterruptibleSampler' class which does not distribute the data
     to each GPU (as this is taken care of by this dataset class) but keeps track of progress through the dataset.
     """
+
     def __init__(
         self,
         root: str,
@@ -38,9 +50,9 @@ class DistributedShardedDataset:
         target_load_transform: Optional[Callable] = lambda target: target,
         sample_getitem_transform: Optional[Callable] = None,
         target_getitem_transform: Optional[Callable] = None,
-        is_valid_file: Optional[Callable[[str], bool]] = None,        
+        is_valid_file: Optional[Callable[[str], bool]] = None,
     ) -> None:
-        
+
         self.root = root
         self.seed = seed
         self.shuffle = shuffle
@@ -49,10 +61,12 @@ class DistributedShardedDataset:
         self.sample_getitem_transform = sample_getitem_transform
         self.target_load_transform = target_load_transform
         self.target_getitem_transform = target_getitem_transform
-        
+
         # Get classes, class index map, and sample paths
         self.classes, self.class_to_idx = self.find_classes(self.root)
-        global_samples = self.make_dataset(self.root, self.class_to_idx, extensions, is_valid_file)
+        global_samples = self.make_dataset(
+            self.root, self.class_to_idx, extensions, is_valid_file
+        )
 
         # Shuffle if shuffling
         if self.shuffle:
@@ -70,8 +84,12 @@ class DistributedShardedDataset:
         assert len(local_samples) == num_local, "MORE LOCAL SAMPLES THAN EXPECTED"
 
         # Load into RAM
-        self.samples = [self.sample_load_transform(self.loader(path)) for path, _ in local_samples]
-        self.targets = [self.target_load_transform(target) for _, target in local_samples]
+        self.samples = [
+            self.sample_load_transform(self.loader(path)) for path, _ in local_samples
+        ]
+        self.targets = [
+            self.target_load_transform(target) for _, target in local_samples
+        ]
 
         if device_id is not None:
             # Load into VRAM
@@ -88,12 +106,13 @@ class DistributedShardedDataset:
         """Returns a list of samples of the form [(path_to_sample, class), ...]."""
         if class_to_idx is None:
             raise ValueError("The class_to_idx parameter cannot be None.")
-        return make_dataset(directory, class_to_idx, extensions=extensions, is_valid_file=is_valid_file)
- 
+        return make_dataset(
+            directory, class_to_idx, extensions=extensions, is_valid_file=is_valid_file
+        )
+
     def find_classes(self, directory: str) -> Tuple[List[str], Dict[str, int]]:
         """Find the class folders in a standard dataset structured folder."""
         return find_classes(directory)
-
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """

@@ -62,9 +62,9 @@ class InterruptableDistributedSampler(DistributedSampler):
             if padding_size <= len(self.indices):
                 self.indices += self.indices[:padding_size]
             else:
-                self.indices += (self.indices * math.ceil(padding_size / len(self.indices)))[
-                    :padding_size
-                ]
+                self.indices += (
+                    self.indices * math.ceil(padding_size / len(self.indices))
+                )[:padding_size]
         else:
             # remove tail of data to make it evenly divisible.
             self.indices = self.indices[: self.total_size]
@@ -323,7 +323,7 @@ class InterruptableSampler(Sampler):
         track of progress through the dataset, but does not include functionality to distribute the dataset accross
         GPUs in the cluster.
 
-        This class is intended for use with the 'DistributedShardedDataset' dataset class which achieves distribution of 
+        This class is intended for use with the 'DistributedShardedDataset' dataset class which achieves distribution of
         an ImageFolder-like dataset in shards to each GPU in the cluster.
         """
         super().__init__()
@@ -366,7 +366,7 @@ class InterruptableSampler(Sampler):
             raise AdvancedTooFarError(
                 "You have advanced too far. You can only advance up to the total size of the dataset."
             )
-        
+
     def __len__(self):
         return len(self.dataset)
 

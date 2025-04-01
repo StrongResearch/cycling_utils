@@ -1,8 +1,8 @@
 import os
 import time
 
-class TimestampedTimer:
 
+class TimestampedTimer:
     """
     This TimestampedTimer can be integrated within a training routine to provide
     point-to-point script timing and reporting.
