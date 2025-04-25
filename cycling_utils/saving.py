@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from shutil import rmtree
 import torch
-from torch.distributed import barrier
+from torch.distributed import barrier, all_reduce
 
 
 def atomic_torch_save(obj, f: str | Path, **kwargs):
@@ -193,7 +193,13 @@ class AtomicDirectory:
 
         # name the next checkpoint directory
         next_checkpoint_name = f"{self.name}_checkpoint_{latest_sequential_index + 1}"
-        if force_save:
+
+        # if any process thinks it should be force tagged, then force tag it
+        global_force = torch.tensor(1 if force_save else 0, dtype=torch.int16, requires_grad=False, device="cuda")
+        all_reduce(global_force)
+        effective_force_save = True if global_force.item() > 0 else False
+
+        if effective_force_save:
             next_checkpoint_name += "_force"
         next_checkpoint_directory = os.path.join(
             self.output_directory, next_checkpoint_name
@@ -218,7 +224,7 @@ class AtomicDirectory:
         assert (
             len(os.listdir(next_checkpoint_directory)) == 0
         ), "ERROR: Next checkpoint directory already populated."
-        if force_save:
+        if effective_force_save:
             assert Path(next_checkpoint_directory).name.endswith(
                 "_force"
             ), "ERROR: Force path missing force tag."
