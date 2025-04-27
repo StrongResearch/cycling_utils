@@ -19,6 +19,7 @@ class AtomicDirectory:
      indicating it is the most recent checkpoint. The symlink can be read upon resume to obtain the path to the latest
      checkpoint directory.
 
+    The AtomicDirectory saver is designed for use in a distributed process group. Each process must initialize the saver.
     The AtomicDirectory accepts the following arguments at initialization:
 
     - output_directory: root directory for all Checkpoint outputs from the experiment; should always be set to the $CHECKPOINT_ARTIFACT_PATH environment variable when training on the Strong Compute ISC.
@@ -37,7 +38,7 @@ class AtomicDirectory:
     >>> rank = int(os.environ["RANK"])
     >>> output_directory = os.environ["CHECKPOINT_ARTIFACT_PATH"]
 
-    >>> # Initialize the AtomicDirectory
+    >>> # Initialize the AtomicDirectory - called by ALL ranks
     >>> saver = AtomicDirectory(output_directory, is_master=rank==0)
 
     >>> # Resume from checkpoint
@@ -56,7 +57,7 @@ class AtomicDirectory:
     >>>         ...training...
 
     >>>         if is_save_step:
-    >>>             # prepare the checkpoint directory
+    >>>             # prepare the checkpoint directory - called by ALL ranks
     >>>             checkpoint_directory = saver.prepare_checkpoint_directory()
 
     >>>             # saving files to the checkpoint_directory
@@ -66,7 +67,7 @@ class AtomicDirectory:
     >>>                 atomic_torch_save(checkpoint, checkpoint_path)
 
     >>>             # finalizing checkpoint with symlink
-    >>>             saver.symlink_latest(checkpoint_directory)
+    >>>             saver.symlink_latest(checkpoint_directory) - called by ALL ranks
 
     The AtomicDirectory saver is designed for use with Checkpoint Artifacts on Strong Compute. The User is responsible for
     implementing AtomicDirectory saver and saving checkpoints at their desired frequency.
@@ -80,6 +81,11 @@ class AtomicDirectory:
     with `force_save = True`. This can be used, for example:
     - to ensure every Nth saved checkpoint is archived for later analysis, or
     - to ensure that checkpoints are saved each time model performance improves.
+
+    The optional `strategy` argument to `prepare_checkpoint_directory` determines what happens if processes differ on the `force_save` argument.
+
+    - `strategy = "any"` (default) will `force_save` the checkpoint if any process passes `force_save = True`
+    - `strategy = "all"` will `force_save` the checkpoint if and only if ALL processes pass `force_save = True`
     """
 
     def __init__(
@@ -121,7 +127,7 @@ class AtomicDirectory:
         else:
             return None
 
-    def prepare_checkpoint_directory(self, force_save=False):
+    def prepare_checkpoint_directory(self, force_save=False, strategy="any"):
 
         barrier()
 
@@ -195,9 +201,19 @@ class AtomicDirectory:
         next_checkpoint_name = f"{self.name}_checkpoint_{latest_sequential_index + 1}"
 
         # if any process thinks it should be force tagged, then force tag it
-        global_force = torch.tensor(1 if force_save else 0, dtype=torch.int16, requires_grad=False, device="cuda")
+        global_force = torch.tensor(
+            1 if force_save else 0,
+            dtype=torch.int16,
+            requires_grad=False,
+            device="cuda",
+        )
         all_reduce(global_force)
-        effective_force_save = True if global_force.item() > 0 else False
+
+        effective_force_save = False
+        if (global_force.item() > 0 and strategy == "any") or (
+            global_force.item() == int(os.environ["WORLD_SIZE"]) and strategy == "all"
+        ):
+            effective_force_save = True
 
         if effective_force_save:
             next_checkpoint_name += "_force"
