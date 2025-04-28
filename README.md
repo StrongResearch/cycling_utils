@@ -2,6 +2,14 @@
 
 Utilities for cycling jobs on ISC infra or making checkpointing more robust.
 
+## dependencies
+
+The `cycling_utils` package has the following dependencies.
+- `torch`
+- `torchvision`
+
+These are not installed with `cycling_utils` to allow the user freedom to install any version of torch and torchvision they require for their project.
+
 ## features 
 
 Regardless of whether it's a hardware failure or you are cycling jobs on ISC infra, the ability to resume a machine learning job from a checkpoint in a robust way should be important for anyone. These utilities have several useful helpers for  safely resuming from a checkpoint, importantly:
@@ -98,42 +106,44 @@ The AtomicDirectory accepts the following arguments at initialization:
 Example usage of AtomicDirectory on the Strong Compute ISC launching with torchrun as follows.
 
 ```
-import os 
-import torch
-import torch.distributed as dist
-from cycling_utils import AtomicDirectory, atomic_torch_save
-
-dist.init_process_group("nccl")
-rank = int(os.environ["RANK"]) 
-output_directory = os.environ["CHECKPOINT_ARTIFACT_PATH"]
-
-# Initialize the AtomicDirectory
-saver = AtomicDirectory(output_directory, is_master=rank==0)
-
-# Resume from checkpoint
-latest_symlink_file_path = os.path.join(output_directory, saver.symlink_name)
-if os.path.exists(latest_symlink_file_path):
-   latest_checkpoint_path = os.readlink(latest_symlink_file_path)
-
-    # Load files from latest_checkpoint_path
-    checkpoint_path = os.path.join(latest_checkpoint_path, "checkpoint.pt")
-    checkpoint = torch.load(checkpoint_path)
-    ...
-
-for epoch in epochs:
-    for batch in batches:
-
-        ...training...
-
-        if is_save_step:
-            checkpoint_directory = saver.prepare_checkpoint_directory()
-
-            # saving files to the checkpoint_directory
-            checkpoint = {...}
-            checkpoint_path = os.path.join(checkpoint_directory, "checkpoint.pt")
-            atomic_torch_save(checkpoint, checkpoint_path)
-
-            # finalizing checkpoint with symlink
-            saver.symlink_latest(checkpoint_directory)
+>>> import os 
+>>> import torch
+>>> import torch.distributed as dist
+>>> from cycling_utils import AtomicDirectory, atomic_torch_save
+​
+>>> dist.init_process_group("nccl")
+>>> rank = int(os.environ["RANK"]) 
+>>> output_directory = os.environ["CHECKPOINT_ARTIFACT_PATH"]
+​
+>>> # Initialize the AtomicDirectory
+>>> saver = AtomicDirectory(output_directory, is_master=rank==0)
+​
+>>> # Resume from checkpoint
+>>> latest_symlink_file_path = os.path.join(output_directory, saver.symlink_name)
+>>> if os.path.exists(latest_symlink_file_path):
+>>>    latest_checkpoint_path = os.readlink(latest_symlink_file_path)
+​
+>>>     # Load files from latest_checkpoint_path
+>>>     checkpoint_path = os.path.join(latest_checkpoint_path, "checkpoint.pt")
+>>>     checkpoint = torch.load(checkpoint_path)
+>>>     ...
+​
+>>> for epoch in epochs:
+>>>     for step, batch in enumerate(batches):
+​
+>>>         ...training...
+​
+>>>         if is_save_step:
+>>>             # prepare the checkpoint directory
+>>>             checkpoint_directory = saver.prepare_checkpoint_directory()
+​
+>>>             # saving files to the checkpoint_directory
+>>>             if is_master_rank:
+>>>                 checkpoint = {...}
+>>>                 checkpoint_path = os.path.join(checkpoint_directory, "checkpoint.pt")
+>>>                 atomic_torch_save(checkpoint, checkpoint_path)
+​
+>>>             # finalize checkpoint with symlink
+>>>             saver.symlink_latest(checkpoint_directory)
 ```
 
