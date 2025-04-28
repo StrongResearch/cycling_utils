@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 import torch
-import torch.distributed as dist
+from torch.distributed import all_reduce, ReduceOp
 
 
 class MetricsTracker:
@@ -65,7 +65,7 @@ class MetricsTracker:
         local = torch.tensor(
             local, dtype=torch.float32, requires_grad=False, device="cuda"
         )
-        dist.all_reduce(local, op=dist.ReduceOp.SUM)
+        all_reduce(local, op=ReduceOp.SUM)
         self.local = defaultdict(float, zip(names, local.tolist()))
         for k in self.local:
             self.agg[k] += self.local[k]
