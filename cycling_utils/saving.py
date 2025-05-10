@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from shutil import rmtree
 import torch
-from torch.distributed import barrier, all_reduce
+from torch.distributed import barrier, all_reduce, all_gather
 
 
 def atomic_torch_save(obj, f: str | Path, **kwargs):
@@ -15,30 +15,54 @@ def atomic_torch_save(obj, f: str | Path, **kwargs):
 
 class AtomicDirectory:
     """
-    The Strong Compute ISC uses an Artifacts system for saving experiment outputs. Saving Checkpoint type Artifacts requires using the AtomicDirectory saver. The User is responsible for implementing AtomicDirectory saver and saving checkpoints at their desired frequency.
+    The Strong Compute ISC uses an Artifacts system for saving experiment outputs. Saving Checkpoint type Artifacts requires using
+    the AtomicDirectory saver. The User is responsible for implementing AtomicDirectory saver and saving checkpoints at their
+    desired frequency.
 
-    The AtomicDirectory saver is designed for use in a distributed process group (e.g. via torchrun). Each process must initialize the saver. AtomicDirectory accepts the following arguments at initialization:
+    The AtomicDirectory saver works by saving each checkpoint to a new directory, and then saving a symlink to that directory
+    which should be read upon resume to obtain the path to the latest checkpoint directory.
 
-    - output_directory: root directory for all ouputs from the experiment, should always be set to the $CHECKPOINT_ARTIFACT_PATH environment variable when training on the Strong Compute ISC.
-    - is_master: a boolean to indicate whether the process running the AtomicDirectory saver is the master rank in the process group.
-    - name: a name for the AtomicDirectory saver. If the user is running multiple savers in parallel, each must be given a unique name.
-    - keep_last: the number of previous checkpoints to retain locally, should always be -1 when saving Checkpoint Artifacts to the $CHECKPOINT_ARTIFACT_PATH on the Strong Compute.
+    The AtomicDirectory saver is designed for use in a distributed process group (e.g. via torchrun) and can be run in either
+    synchronous or non-synchronous mode.
 
-    The AtomicDirectory saver works by saving each checkpoint to a new directory, and then saving a symlink to that directory which should be read upon resume to obtain the path to the latest checkpoint directory.
+    In synchronous mode, each process in the distributed process group accesses the same checkpoint directory created by the
+    AtomicDirectory saver each checkpoint save. This is suitable for synchronous distributed training procedures like
+    DistributedDataParallel.
 
-    Checkpoint Artifacts saved to $CHECKPOINT_ARTIFACT_PATH are synchronized every 10 minutes and/or at the end of each cycle on Strong Compute. Upon synchronization, the latest symlinked checkpoint/s saved by AtomicDirectory saver/s in the $CHECKPOINT_ARTIFACT_PATH directory will be shipped to Checkpoint Artifacts for the experiment. Any non-latest checkpoints saved since the previous Checkpoint Artifact sychronization will be deleted and not shipped.
+    In asynchronous mode, each process creates its own dedicated checkpoint directory and can save checkpoints independently of
+    other processes.
+
+    Each checkpointing process must initialize the saver. AtomicDirectory accepts the following arguments at initialization:
+
+    - output_directory: root directory for all ouputs from the experiment, should always be set to the $CHECKPOINT_ARTIFACT_PATH
+    environment variable when training on the Strong Compute ISC.
+    - is_master: a boolean to indicate whether the process running the AtomicDirectory saver is the master rank in the process
+    group. For asynchronous mode, all ranks must pass is_master = True.
+    - name: a name for the AtomicDirectory saver. If the user is running multiple savers in parallel, each must be given a unique
+    name.
+    - keep_last: the number of previous checkpoints to retain locally, should always be -1 when saving Checkpoint Artifacts to the
+    $CHECKPOINT_ARTIFACT_PATH on the Strong Compute.
+    - strategy: must be one of "sync_any" (default), "sync_all", or "async", determining whether the saver runs in synchronous or
+    asynchronous mode, and force saving (see below). All AtomicDirectory savers MUST be initialized withh the same strategy.
+
+    Checkpoint Artifacts saved to $CHECKPOINT_ARTIFACT_PATH are synchronized every 10 minutes and/or at the end of each cycle on
+    Strong Compute. Upon synchronization, the latest symlinked checkpoint/s saved by AtomicDirectory saver/s in the
+    $CHECKPOINT_ARTIFACT_PATH directory will be shipped to Checkpoint Artifacts for the experiment. Any non-latest checkpoints
+    saved since the previous Checkpoint Artifact sychronization will be deleted and not shipped.
 
     The user can force non-latest checkpoints to also ship to Checkpoint Artifacts by calling `prepare_checkpoint_directory`
     with `force_save = True`. This can be used, for example:
     - to ensure milestone checkpoints are archived for later analysis, or
     - to ensure that checkpoints are saved each time model performance improves.
 
-    The optional `strategy` argument to `prepare_checkpoint_directory` determines what happens if processes differ on the `force_save` argument.
+    The `strategy` argument to the AtomicDirectory saver at initialization determines what happens if processes disagree on the
+    `force_save` argument.
 
-    - `strategy = "any"` (default) will `force_save` the checkpoint if any process passes `force_save = True`
-    - `strategy = "all"` will `force_save` the checkpoint if and only if ALL processes pass `force_save = True`
+    - `strategy = "sync_any"` (default) will `force_save` the checkpoint if ANY process passes `force_save = True`
+    - `strategy = "sync_all"` will `force_save` the checkpoint if and only if ALL processes pass `force_save = True`
+    - `strategy = "async"` will `force_save` the checkpoint if the saving process passes `force_save = True`
 
-    Example usage of AtomicDirectory on the Strong Compute ISC launching with torchrun as follows.
+    Example usage of AtomicDirectory in synchronous mode on the Strong Compute ISC launching with torchrun as follows.
 
     ```
     >>> import os
@@ -89,12 +113,41 @@ class AtomicDirectory:
         is_master=False,
         name="AtomicDirectory",
         keep_last=-1,
+        strategy="sync_any",
     ):
         self.output_directory = output_directory
         self.is_master = is_master
-        self.name = name
         self.keep_last = keep_last
+        self.rank = os.environ["RANK"]
         self.symlink_name = f"{self.name}.latest_checkpoint"
+
+        # make sure all processes have been initialized with the same
+        strategy_map = {"sync_any": 0, "sync_all": 1, "async": 2}
+        if strategy in strategy_map:
+            strategy_int = strategy_map[strategy]
+        else:
+            raise f"ERROR: AtomicDirectory saver must be initialized with strategy = 'sync_any', 'sync_all', or 'async' but rank \
+                {os.environ['RANK']} was passed '{strategy}'."
+
+        local_strategy_tensor = torch.tensor(
+            strategy_int, dtype=torch.int16, requires_grad=False, device="cuda"
+        )
+        global_strategy_list = [
+            torch.zeros(1, dtype=torch.int16, requires_grad=False, device="cuda")
+            for _ in range(int(os.environ["WORLD_SIZE"]))
+        ]
+        all_gather(global_strategy_list, local_strategy_tensor)
+        unique_global_strategy_ints = set([t.item() for t in global_strategy_list])
+        assert (
+            len(unique_global_strategy_ints) == 1
+        ), "ERROR: AtomicDirectory savers initialized with different strategies."
+
+        self.strategy = strategy
+
+        if self.strategy == "async":
+            self.name = name + f"_rank_{os.environ['RANK']}"
+        else:
+            self.name = name
 
         try:
             os.makedirs(output_directory, exist_ok=True)
@@ -122,9 +175,10 @@ class AtomicDirectory:
         else:
             return None
 
-    def prepare_checkpoint_directory(self, force_save=False, strategy="any"):
+    def prepare_checkpoint_directory(self, force_save=False):
 
-        barrier()
+        if self.strategy in ["sync_any", "sync_all"]:
+            barrier()
 
         output_directory_contents = os.listdir(self.output_directory)
         maybe_checkpoint_suffixes = [
@@ -182,7 +236,8 @@ class AtomicDirectory:
             deletable = incomplete_deletable + obsolete_deletable
 
         # Delete deletable
-        barrier()
+        if self.strategy in ["sync_any", "sync_all"]:
+            barrier()
 
         if self.is_master:
             for path in deletable:
@@ -190,25 +245,31 @@ class AtomicDirectory:
             for path in deletable:
                 assert not Path(path).exists()
 
-        barrier()
+        if self.strategy in ["sync_any", "sync_all"]:
+            barrier()
 
         # name the next checkpoint directory
         next_checkpoint_name = f"{self.name}_checkpoint_{latest_sequential_index + 1}"
 
-        # if any process thinks it should be force tagged, then force tag it
-        global_force = torch.tensor(
-            1 if force_save else 0,
-            dtype=torch.int16,
-            requires_grad=False,
-            device="cuda",
-        )
-        all_reduce(global_force)
+        # determine force saving based on strategy
+        if self.strategy in ["sync_any", "sync_all"]:
+            global_force = torch.tensor(
+                1 if force_save else 0,
+                dtype=torch.int16,
+                requires_grad=False,
+                device="cuda",
+            )
+            all_reduce(global_force)
 
-        effective_force_save = False
-        if (global_force.item() > 0 and strategy == "any") or (
-            global_force.item() == int(os.environ["WORLD_SIZE"]) and strategy == "all"
-        ):
-            effective_force_save = True
+            effective_force_save = False
+            if (global_force.item() > 0 and self.strategy == "sync_any") or (
+                global_force.item() == int(os.environ["WORLD_SIZE"])
+                and self.strategy == "sync_all"
+            ):
+                effective_force_save = True
+
+        elif self.strategy == "async":
+            effective_force_save = force_save
 
         if effective_force_save:
             next_checkpoint_name += "_force"
@@ -224,7 +285,8 @@ class AtomicDirectory:
             if Path(next_checkpoint_directory).exists():
                 break
 
-        barrier()
+        if self.strategy in ["sync_any", "sync_all"]:
+            barrier()
 
         assert Path(
             next_checkpoint_directory
@@ -240,13 +302,15 @@ class AtomicDirectory:
                 "_force"
             ), "ERROR: Force path missing force tag."
 
-        barrier()
+        if self.strategy in ["sync_any", "sync_all"]:
+            barrier()
 
         return next_checkpoint_directory
 
     def symlink_latest(self, checkpoint_directory):
 
-        barrier()
+        if self.strategy in ["sync_any", "sync_all"]:
+            barrier()
 
         if self.is_master:
             # Create a new symlink with name suffixed with temp
@@ -261,4 +325,5 @@ class AtomicDirectory:
                 os.path.join(parent_dir, self.symlink_name),
             )
 
-        barrier()
+        if self.strategy in ["sync_any", "sync_all"]:
+            barrier()
