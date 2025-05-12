@@ -129,10 +129,10 @@ class AtomicDirectory:
                 {os.environ['RANK']} was passed '{strategy}'."
 
         local_strategy_tensor = torch.tensor(
-            strategy_int, dtype=torch.int16, requires_grad=False, device="cuda"
+            strategy_int, requires_grad=False, device="cuda"
         )
         global_strategy_list = [
-            torch.zeros(1, dtype=torch.int16, requires_grad=False, device="cuda")
+            torch.zeros(1, requires_grad=False, device="cuda")
             for _ in range(int(os.environ["WORLD_SIZE"]))
         ]
         all_gather(global_strategy_list, local_strategy_tensor)
