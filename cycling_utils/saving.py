@@ -256,7 +256,7 @@ class AtomicDirectory:
         if self.strategy in ["sync_any", "sync_all"]:
             global_force = torch.tensor(
                 1 if force_save else 0,
-                dtype=torch.int16,
+                dtype=torch.int64,
                 requires_grad=False,
                 device="cuda",
             )
