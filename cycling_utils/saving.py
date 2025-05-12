@@ -119,7 +119,6 @@ class AtomicDirectory:
         self.is_master = is_master
         self.keep_last = keep_last
         self.rank = os.environ["RANK"]
-        self.symlink_name = f"{self.name}.latest_checkpoint"
 
         # make sure all processes have been initialized with the same
         strategy_map = {"sync_any": 0, "sync_all": 1, "async": 2}
@@ -148,6 +147,8 @@ class AtomicDirectory:
             self.name = name + f"_rank_{os.environ['RANK']}"
         else:
             self.name = name
+
+        self.symlink_name = f"{self.name}.latest_checkpoint"
 
         try:
             os.makedirs(output_directory, exist_ok=True)
