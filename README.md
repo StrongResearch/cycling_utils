@@ -2,6 +2,14 @@
 
 Utilities for cycling jobs on ISC infra or making checkpointing more robust.
 
+## dependencies
+
+The `cycling_utils` package has the following dependencies.
+- `torch`
+- `torchvision`
+
+These are not installed with `cycling_utils` to allow the user freedom to install any version of torch and torchvision they require for their project.
+
 ## features 
 
 Regardless of whether it's a hardware failure or you are cycling jobs on ISC infra, the ability to resume a machine learning job from a checkpoint in a robust way should be important for anyone. These utilities have several useful helpers for  safely resuming from a checkpoint, importantly:
@@ -79,61 +87,75 @@ atomic_torch_save({
 
 The Strong Compute ISC uses an Artifacts system for saving experiment outputs. Saving Checkpoint type Artifacts requires using the AtomicDirectory saver. The User is responsible for implementing AtomicDirectory saver and saving checkpoints at their desired frequency.
 
-The AtomicDirectory saver works by saving each checkpoint to a new directory, and then saving a symlink to that directory
-which should be read upon resume to obtain the path to the latest checkpoint directory.
+The AtomicDirectory saver works by saving each checkpoint to a new directory, and then saving a symlink to that directory which should be read upon resume to obtain the path to the latest checkpoint directory.
+
+The AtomicDirectory saver is designed for use in a distributed process group (e.g. via torchrun) and can be run in either synchronous or non-synchronous mode.
+
+In synchronous mode, each process in the distributed process group accesses the same checkpoint directory created by the AtomicDirectory saver each checkpoint save. This is suitable for synchronous distributed training procedures like DistributedDataParallel.
+
+In asynchronous mode, each process creates its own dedicated checkpoint directory and can save checkpoints independently of other processes.
+
+Each checkpointing process must initialize the saver. AtomicDirectory accepts the following arguments at initialization:
+
+- output_directory: root directory for all ouputs from the experiment, should always be set to the $CHECKPOINT_ARTIFACT_PATH environment variable when training on the Strong Compute ISC.
+- is_master: a boolean to indicate whether the process running the AtomicDirectory saver is the master rank in the process group. For asynchronous mode, all ranks must pass is_master = True.
+- name: a name for the AtomicDirectory saver. If the user is running multiple savers in parallel, each must be given a unique name.
+- keep_last: the number of previous checkpoints to retain locally, should always be -1 when saving Checkpoint Artifacts to the $CHECKPOINT_ARTIFACT_PATH on the Strong Compute.
+- strategy: must be one of "sync_any" (default), "sync_all", or "async", determining whether the saver runs in synchronous or asynchronous mode, and force saving (see below). All AtomicDirectory savers MUST be initialized withh the same strategy.
 
 Checkpoint Artifacts saved to $CHECKPOINT_ARTIFACT_PATH are synchronized every 10 minutes and/or at the end of each cycle on Strong Compute. Upon synchronization, the latest symlinked checkpoint/s saved by AtomicDirectory saver/s in the $CHECKPOINT_ARTIFACT_PATH directory will be shipped to Checkpoint Artifacts for the experiment. Any non-latest checkpoints saved since the previous Checkpoint Artifact sychronization will be deleted and not shipped.
 
 The user can force non-latest checkpoints to also ship to Checkpoint Artifacts by calling `prepare_checkpoint_directory` with `force_save = True`. This can be used, for example:
-- to ensure every Nth saved checkpoint is archived for later analysis, or 
-- to ensure that checkpoints are saved each time model performance improves. 
+- to ensure milestone checkpoints are archived for later analysis, or
+- to ensure that checkpoints are saved each time model performance improves.
 
-The AtomicDirectory accepts the following arguments at initialization:
+The `strategy` argument to the AtomicDirectory saver at initialization determines what happens if processes disagree on the `force_save` argument.
 
-- output_directory: root directory for all ouputs from the experiment, should always be set to the $CHECKPOINT_ARTIFACT_PATH environment variable when training on the Strong Compute ISC.
-- is_master: a boolean to indicate whether the process running the AtomicDirectory saver is the master rank in the process group.
-- name: a name for the AtomicDirectory saver. If the user is running multiple savers in parallel, each must be given a unique name.
-- keep_last: the number of previous checkpoints to retain locally, should always be -1 when saving Checkpoint Artifacts to the $CHECKPOINT_ARTIFACT_PATH on the Strong Compute.
+- `strategy = "sync_any"` (default) will `force_save` the checkpoint if ANY process passes `force_save = True`
+- `strategy = "sync_all"` will `force_save` the checkpoint if and only if ALL processes pass `force_save = True`
+- `strategy = "async"` will `force_save` the checkpoint if the saving process passes `force_save = True`
 
-Example usage of AtomicDirectory on the Strong Compute ISC launching with torchrun as follows.
+Example usage of AtomicDirectory in synchronous mode on the Strong Compute ISC launching with torchrun as follows.
 
 ```
-import os 
-import torch
-import torch.distributed as dist
-from cycling_utils import AtomicDirectory, atomic_torch_save
+>>> import os
+>>> import torch
+>>> import torch.distributed as dist
+>>> from cycling_utils import AtomicDirectory, atomic_torch_save
 
-dist.init_process_group("nccl")
-rank = int(os.environ["RANK"]) 
-output_directory = os.environ["CHECKPOINT_ARTIFACT_PATH"]
+>>> dist.init_process_group("nccl")
+>>> rank = int(os.environ["RANK"])
+>>> output_directory = os.environ["CHECKPOINT_ARTIFACT_PATH"]
 
-# Initialize the AtomicDirectory
-saver = AtomicDirectory(output_directory, is_master=rank==0)
+>>> # Initialize the AtomicDirectory - called by ALL ranks
+>>> saver = AtomicDirectory(output_directory, is_master=rank==0)
 
-# Resume from checkpoint
-latest_symlink_file_path = os.path.join(output_directory, saver.symlink_name)
-if os.path.exists(latest_symlink_file_path):
-   latest_checkpoint_path = os.readlink(latest_symlink_file_path)
+>>> # Resume from checkpoint
+>>> latest_symlink_file_path = os.path.join(output_directory, saver.symlink_name)
+>>> if os.path.exists(latest_symlink_file_path):
+>>>    latest_checkpoint_path = os.readlink(latest_symlink_file_path)
 
-    # Load files from latest_checkpoint_path
-    checkpoint_path = os.path.join(latest_checkpoint_path, "checkpoint.pt")
-    checkpoint = torch.load(checkpoint_path)
-    ...
+>>>     # Load files from latest_checkpoint_path
+>>>     checkpoint_path = os.path.join(latest_checkpoint_path, "checkpoint.pt")
+>>>     checkpoint = torch.load(checkpoint_path)
+>>>     ...
 
-for epoch in epochs:
-    for batch in batches:
+>>> for epoch in epochs:
+>>>     for step, batch in enumerate(batches):
 
-        ...training...
+>>>         ...training...
 
-        if is_save_step:
-            checkpoint_directory = saver.prepare_checkpoint_directory()
+>>>         if is_save_step:
+>>>             # prepare the checkpoint directory - called by ALL ranks
+>>>             checkpoint_directory = saver.prepare_checkpoint_directory()
 
-            # saving files to the checkpoint_directory
-            checkpoint = {...}
-            checkpoint_path = os.path.join(checkpoint_directory, "checkpoint.pt")
-            atomic_torch_save(checkpoint, checkpoint_path)
+>>>             # saving files to the checkpoint_directory
+>>>             if is_master_rank:
+>>>                 checkpoint = {...}
+>>>                 checkpoint_path = os.path.join(checkpoint_directory, "checkpoint.pt")
+>>>                 atomic_torch_save(checkpoint, checkpoint_path)
 
-            # finalizing checkpoint with symlink
-            saver.symlink_latest(checkpoint_directory)
+>>>             # finalizing checkpoint with symlink - called by ALL ranks
+>>>             saver.symlink_latest(checkpoint_directory)
 ```
 
