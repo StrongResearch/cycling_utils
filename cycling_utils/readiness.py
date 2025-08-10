@@ -25,9 +25,24 @@ Alongside user project files, create two additional files (examples below):
 1. readiness_check.py
 2. readiness_check.sh
 
-Then in the experiment launch file, after sourcing venv and before launching torchrun, insert:
+Then in the experiment launch file, after sourcing venv and before launching torchrun, insert 
+"bash /path/to/readiness_check.sh &&" as follows
 
-"bash /path/to/readiness_check.sh &&"
+# - fashion_mnist.isc - #
+
+isc_project_id = "<project-id>"
+experiment_name = "fashion_mnist"
+gpus = 16
+compute_mode = "burst"
+dataset_id_list = ["uds-decorous-field-baritone-250513"]
+command = '''
+source /root/.fashion/bin/activate && 
+bash /path/to/readiness_check.sh &&
+torchrun --nnodes=$NNODES --nproc-per-node=$N_PROC 
+--master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --node_rank=$RANK 
+/root/isc-demos/fashion_mnist/train.py 
+--dataset-id uds-decorous-field-baritone-250513
+--lr 0.001 --batch-size 16'''
 
 The idea here is that the shell script essentially launches a mini project with torchrun before the 
 main project starts. The mini project initializes a process group and completes an all-reduce.
