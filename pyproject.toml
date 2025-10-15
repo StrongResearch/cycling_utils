@@ -15,3 +15,5 @@ authors = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools_scm]
