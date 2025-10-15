@@ -61,11 +61,11 @@ class AtomicDirectory:
     - `strategy = "sync_any"` (default) will `force_save` the checkpoint if ANY process passes `force_save = True`
     - `strategy = "sync_all"` will `force_save` the checkpoint if and only if ALL processes pass `force_save = True`
     - `strategy = "async"` will `force_save` the checkpoint if the saving process passes `force_save = True`
-    - `strategy = "offline"` will `force_save` the checkpoint if the saving process passes `force_save = True`
+    - `strategy = "mono"` will `force_save` the checkpoint if the saving process passes `force_save = True`
 
     Each of the strategies "sync_any", "sync_all", and "async"
 
-    Further, the `strategy = "offline"` argument should be passed if the AtomicDirectory saver is intended for use outside of a
+    Further, the `strategy = "mono"` argument should be passed if the AtomicDirectory saver is intended for use outside of a
     torchrun distributed process group. In such cases, the user must ensure that all instances of the AtomicDirectory saver are
     initialized with a unique 'name'.
 
@@ -130,21 +130,21 @@ class AtomicDirectory:
         self.world_size = os.getenv("WORLD_SIZE", "NONE")
 
         # make sure all processes have been initialized with the same
-        strategy_map = {"sync_any": 0, "sync_all": 1, "async": 2, "offline": 3}
+        strategy_map = {"sync_any": 0, "sync_all": 1, "async": 2, "mono": 3}
         if strategy in strategy_map:
             strategy_int = strategy_map[strategy]
         else:
-            raise f"ERROR: AtomicDirectory saver must be initialized with strategy = 'sync_any', 'sync_all', 'async', or 'offline' but rank \
+            raise f"ERROR: AtomicDirectory saver must be initialized with strategy = 'sync_any', 'sync_all', 'async', or 'mono' but rank \
                 {self.rank} was passed '{strategy}'."
 
-        if strategy != "offline":
+        if strategy != "mono":
 
             assert (
                 self.rank != "NONE"
-            ), "ERROR: AtomicDirectory requires RANK environment variable set if strategy is not 'offline'."
+            ), "ERROR: AtomicDirectory requires RANK environment variable set if strategy is not 'mono'."
             assert (
                 self.world_size != "NONE"
-            ), "ERROR: AtomicDirectory requires WORLD_SIZE environment variable set if strategy is not 'offline'."
+            ), "ERROR: AtomicDirectory requires WORLD_SIZE environment variable set if strategy is not 'mono'."
 
             local_strategy_tensor = torch.tensor(
                 strategy_int, dtype=torch.int64, requires_grad=False, device="cuda"
@@ -285,7 +285,7 @@ class AtomicDirectory:
             ):
                 effective_force_save = True
 
-        else:  # self.strategy in ["async", "offline"]
+        else:  # self.strategy in ["async", "mono"]
             effective_force_save = force_save
 
         if effective_force_save:
