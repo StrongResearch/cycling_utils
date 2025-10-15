@@ -12,3 +12,9 @@ authors = [
     {name = "Adam Peaston", email = "adam@strongcompute.com"},
     {name = "Fennecs Swaddle", email = "fennecs@strongcompute.com"}
 ]
+
+[tool.setuptools]
+package-dir = {"" = "cycling_utils"}
+
+[tool.setuptools.packages.find]
+where = ["cycling_utils"]
