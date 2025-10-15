@@ -285,7 +285,7 @@ class AtomicDirectory:
             ):
                 effective_force_save = True
 
-        elif self.strategy in ["async", "offline"]:
+        else:  # self.strategy in ["async", "offline"]
             effective_force_save = force_save
 
         if effective_force_save:
