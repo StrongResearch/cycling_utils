@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cycling_utils"
-version = "0.0.2"
+version = "0.0.3"
 description = "Utilities to assist with distributed deep learning on Strong Compute."
 readme = "README.md"
 requires-python = ">= 3.10"
