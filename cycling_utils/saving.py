@@ -151,7 +151,7 @@ class AtomicDirectory:
             )
             global_strategy_list = [
                 torch.zeros(1, dtype=torch.int64, requires_grad=False, device="cuda")
-                for _ in range(int(os.environ["WORLD_SIZE"]))
+                for _ in range(int(self.world_size))
             ]
             all_gather(global_strategy_list, local_strategy_tensor)
             unique_global_strategy_ints = set([t.item() for t in global_strategy_list])
@@ -160,7 +160,7 @@ class AtomicDirectory:
             ), "ERROR: AtomicDirectory savers initialized with different strategies."
 
         if strategy == "async":
-            self.name = name + f"_rank_{os.environ['RANK']}"
+            self.name = name + f"_rank_{self.rank}"
         else:
             self.name = name
 
@@ -280,7 +280,7 @@ class AtomicDirectory:
 
             effective_force_save = False
             if (global_force.item() > 0 and self.strategy == "sync_any") or (
-                global_force.item() == int(os.environ["WORLD_SIZE"])
+                global_force.item() == int(self.world_size)
                 and self.strategy == "sync_all"
             ):
                 effective_force_save = True
