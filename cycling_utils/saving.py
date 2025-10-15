@@ -2,15 +2,13 @@ import os
 import re
 from pathlib import Path
 from shutil import rmtree
-import torch
-from torch.distributed import barrier, all_reduce, all_gather
 
 
-def atomic_torch_save(obj, f: str | Path, **kwargs):
-    f = str(f)
-    temp_f = f + ".temp"
-    torch.save(obj, temp_f, **kwargs)
-    os.replace(temp_f, f)
+# def atomic_torch_save(obj, f: str | Path, **kwargs):
+#     f = str(f)
+#     temp_f = f + ".temp"
+#     torch.save(obj, temp_f, **kwargs)
+#     os.replace(temp_f, f)
 
 
 class AtomicDirectory:
@@ -138,6 +136,8 @@ class AtomicDirectory:
                 {self.rank} was passed '{strategy}'."
 
         if strategy != "offline":
+            import torch
+            from torch.distributed import barrier, all_reduce, all_gather
 
             assert (
                 self.rank != "NONE"
