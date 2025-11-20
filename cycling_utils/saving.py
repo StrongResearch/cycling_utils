@@ -72,7 +72,7 @@ class AtomicDirectory:
     The "async" strategy is intended for use as a group of independent savers, each creating and accessing independent checkpoint
     directories, with "name" automatically generated according to the rank of the saver process in the group.
 
-    The "mono" strategy is intended for use by processes operating outside of a torchrun distributed process group. In this case, 
+    The "mono" strategy is intended for use by processes operating outside of a torchrun distributed process group. In this case,
     the user MUST ensure that all instances of the AtomicDirectory saver are initialized with a unique "name".
 
     Example usage of AtomicDirectory in synchronous mode on the Strong Compute ISC launching with torchrun as follows.
@@ -127,11 +127,13 @@ class AtomicDirectory:
         name="AtomicDirectory",
         keep_last=-1,
         strategy="sync_any",
+        device="cuda",
     ):
         self.output_directory = output_directory
         self.is_master = is_master or strategy in ["async", "mono"]
         self.keep_last = keep_last
         self.strategy = strategy
+        self.device = device
         self.rank = os.getenv("RANK", "NONE")
         self.world_size = os.getenv("WORLD_SIZE", "NONE")
 
@@ -154,10 +156,12 @@ class AtomicDirectory:
             ), "ERROR: AtomicDirectory requires WORLD_SIZE environment variable set if strategy is not 'mono'."
 
             local_strategy_tensor = torch.tensor(
-                strategy_int, dtype=torch.int64, requires_grad=False, device="cuda"
+                strategy_int, dtype=torch.int64, requires_grad=False, device=self.device
             )
             global_strategy_list = [
-                torch.zeros(1, dtype=torch.int64, requires_grad=False, device="cuda")
+                torch.zeros(
+                    1, dtype=torch.int64, requires_grad=False, device=self.device
+                )
                 for _ in range(int(self.world_size))
             ]
             all_gather(global_strategy_list, local_strategy_tensor)
@@ -232,7 +236,7 @@ class AtomicDirectory:
         latest_sequential_index = -1
         deletable = []
 
-        # retrieve latest checkpoint information from symlink 
+        # retrieve latest checkpoint information from symlink
         if symlink_found:
 
             symlink_path = os.readlink(
@@ -274,7 +278,7 @@ class AtomicDirectory:
         if self.strategy in ["sync_any", "sync_all"]:
             barrier()
 
-        # master / responsible rank deletes deletable 
+        # master / responsible rank deletes deletable
         if self.is_master:
             for path in deletable:
                 rmtree(path)
@@ -294,7 +298,7 @@ class AtomicDirectory:
                 1 if force_save else 0,
                 dtype=torch.int64,
                 requires_grad=False,
-                device="cuda",
+                device=self.device,
             )
             all_reduce(global_force)
 
